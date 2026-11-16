@@ -1,0 +1,113 @@
+name: kernel-tb128fu-4g64g
+
+# Stage 4 preparation: build the XNU kernel for this tablet on a Linux runner.
+# The kernel step works on Linux with the toolchain of scripts/linux/setup-toolchain.py;
+# only --skip-setup and seed-data-grow need macOS, and neither is used here.
+#
+# Inputs: the fork's board.toml / tb128fu.dtb / MemoryMapLib.c / GccUfs.h (4 GB / 64 GB port).
+
+on:
+  workflow_dispatch:
+
+env:
+  PYTHONUNBUFFERED: "1"
+  UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
+  UNIXNU_IPSW: ${{ runner.temp }}/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+
+jobs:
+  kernel:
+    name: XNU kernel (Linux toolchain)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Check out this fork
+        uses: actions/checkout@v4
+        with:
+          path: UniXNU-tb128fu
+          submodules: false
+
+      - name: Check out the UniXNU driver
+        uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          path: UniXNU
+
+      - name: Check out the firmware (Mu-Silicium, tb128fu branch)
+        uses: actions/checkout@v4
+        with:
+          repository: xVanTuring/uefi-tb128fu
+          ref: tb128fu
+          path: uefi-tb128fu
+          submodules: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake ninja-build mtools device-tree-compiler unifdef \
+            libbsd-dev uuid-dev libssl-dev zlib1g-dev libclang-dev clang llvm
+
+      - name: Build the Linux Mach-O toolchain (patched clang + cctools-port)
+        run: |
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt
+
+      - name: Fetch sources (initialises the module submodules)
+        run: |
+          cd UniXNU
+          ./unixnu fetch -D ../UniXNU-tb128fu
+
+      - name: Apply the 4 GB / 64 GB changes
+        run: |
+          set -eux
+          MM=uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+          cp UniXNU-tb128fu/MemoryMapLib.c "$MM"
+          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+          grep -n "DRAM 0x85800000" "$MM"
+          grep -n "0xd5fffa" UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+
+      - name: Download the iPad7,1 17.7.11 restore image
+        run: |
+          set -eux
+          curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
+            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+          ls -l "$UNIXNU_IPSW"
+          sha256sum "$UNIXNU_IPSW" || true
+
+      - name: Select the kernel configuration and fetch the IPSW components
+        run: |
+          cd UniXNU
+          ./unixnu defconfig tb128fu_defconfig -D ../UniXNU-tb128fu
+          ./unixnu status -D ../UniXNU-tb128fu
+          ./unixnu ipsw fetch -D ../UniXNU-tb128fu
+
+      - name: Build the kernel (first link has no PMGR reference)
+        run: |
+          cd UniXNU
+          ./unixnu build kernel -D ../UniXNU-tb128fu
+
+      - name: Build the kernel again (links the PMGR bridge)
+        run: |
+          cd UniXNU
+          ./unixnu build kernel -D ../UniXNU-tb128fu
+
+      - name: Show what was produced
+        if: always()
+        run: |
+          find UniXNU/out/tb128fu -maxdepth 3 -type f -printf '%s\t%p\n' 2>/dev/null | sort -n | tail -40
+
+      - name: Upload the kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: tb128fu-4g64g-kernel
+          path: |
+            UniXNU/out/tb128fu/kernel/
+            UniXNU/out/tb128fu/tree/build/**/*.macho
+            UniXNU/out/tb128fu/logs/
+          if-no-files-found: warn
+          retention-days: 14

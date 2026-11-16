@@ -9,9 +9,14 @@ name: build-tb128fu-4g64g
 #   patches/          - the same two changes as unified diffs, for reference
 
 on:
-  push:
-    branches: [ main, master, 4g64g ]
   workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'board.toml'
+      - 'tb128fu.dtb'
+      - 'MemoryMapLib.c'
+      - 'GccUfs.h'
 
 env:
   PYTHONUNBUFFERED: "1"
