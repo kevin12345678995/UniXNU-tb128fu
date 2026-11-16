@@ -12,7 +12,7 @@ on:
 env:
   PYTHONUNBUFFERED: "1"
   UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
-  UNIXNU_IPSW: ${{ runner.temp }}/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+  UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
 
 jobs:
   kernel:
@@ -74,6 +74,7 @@ jobs:
       - name: Download the iPad7,1 17.7.11 restore image
         run: |
           set -eux
+          mkdir -p "$(dirname "$UNIXNU_IPSW")"
           curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
             "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
           ls -l "$UNIXNU_IPSW"
