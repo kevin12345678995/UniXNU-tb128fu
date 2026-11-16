@@ -1,13 +1,12 @@
 name: build-tb128fu-4g64g
 
 # Builds a UniXNU boot.img for THIS tablet: Lenovo TB128FU, 4 GB RAM / 64 GB Micron UFS.
-# Layout expected in this repository (the fork):
-#   board.toml                    - patched for 4 GB / 64 GB (last_lba, dram_size, owned_memory_size)
-#   tb128fu.dtb                   - generated from the tablet's live /sys/firmware/fdt
-#   patches/MemoryMapLib.c.patch  - applied to the Mu-Silicium checkout
-#   patches/GccUfs.h.patch        - applied to the Tb128fuUfs module submodule
-#
-# The payload-macos job (Stage 4/5: XNU kernel) is manual and needs the platform seed secret.
+# Repository layout (this fork):
+#   board.toml        - patched for 4 GB / 64 GB (last_lba, dram_size, owned_memory_size)
+#   tb128fu.dtb       - generated from the tablet's live /sys/firmware/fdt
+#   MemoryMapLib.c    - firmware memory map for 4 GB (copied over the Mu-Silicium file)
+#   GccUfs.h          - UFS userdata window for 64 GB (copied over the Tb128fuUfs file)
+#   patches/          - the same two changes as unified diffs, for reference
 
 on:
   push:
@@ -68,9 +67,15 @@ jobs:
       - name: Apply the 4 GB / 64 GB changes
         run: |
           set -eux
-          cp tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
-          git -C uefi-tb128fu apply "$PWD"/patches/MemoryMapLib.c.patch
-          git -C UniXNU-tb128fu/drivers/Tb128fuUfs apply "$PWD"/patches/GccUfs.h.patch
+          MM=uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+          cp UniXNU-tb128fu/MemoryMapLib.c "$MM"
+          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+          # fail loudly if the copied files are not the 4 GB / 64 GB versions
+          grep -n "DRAM 0x85800000" "$MM"
+          grep -n "0x04800000" "$MM"
+          grep -n "0xd5fffa" UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+          grep -c "0x100000000" UniXNU-tb128fu/board.toml
           git -C uefi-tb128fu diff --stat
           git -C UniXNU-tb128fu/drivers/Tb128fuUfs diff --stat
           git -C UniXNU-tb128fu diff --stat
@@ -130,9 +135,10 @@ jobs:
           cd UniXNU
           ./unixnu fetch -D ../UniXNU-tb128fu
           cd ..
+          cp UniXNU-tb128fu/MemoryMapLib.c uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
           cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
-          git -C uefi-tb128fu apply "$PWD"/UniXNU-tb128fu/patches/MemoryMapLib.c.patch
-          git -C UniXNU-tb128fu/drivers/Tb128fuUfs apply "$PWD"/UniXNU-tb128fu/patches/GccUfs.h.patch
+          grep -n "DRAM 0x85800000" uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
 
       - name: Download the iPad7,1 17.7.11 restore image
         run: |
