@@ -43,3 +43,6 @@ __pycache__/
 *.key
 .env
 local.toml
+
+# 4 GB/64 GB port ships its device tree (README-4g64g.md)
+!tb128fu.dtb

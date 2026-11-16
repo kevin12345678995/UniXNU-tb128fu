@@ -1,0 +1,26 @@
+--- a/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
++++ b/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+@@ -31,17 +31,17 @@
+   {"UEFI Stack",         0x5FF90000, 0x00040000, AddMem, SYS_MEM, SYS_MEM_CAP, BsData, WRITE_BACK_XN},
+   {"Log Buffer",         0x5FFF7000, 0x00008000, AddMem, SYS_MEM, SYS_MEM_CAP, RtData, WRITE_BACK_XN},
+   {"Info Blk",           0x5FFFF000, 0x00001000, AddMem, SYS_MEM, SYS_MEM_CAP, RtData, WRITE_BACK_XN},
+   {"Removed Region",     0x60000000, 0x03900000, AddMem, MEM_RES, UNCACHEABLE, Reserv, UNCACHED_UNBUFFERED_XN},
+-  {"DRAM 0x63900000",    0x63900000, 0x19300000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK_XN},
++  {"DRAM 0x63900000",    0x63900000, 0x1A400000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK_XN},
+   // The boot image is loaded at 0x80000000 (kernel + appended DTB, 16 MiB) and
+-  // its ramdisk at 0x81000000 (the 56 MiB UniXNU payload volume). Reserve both
++  // its ramdisk at 0x81000000 (the 72 MiB UniXNU payload volume). Reserve both
+   // before the DXE allocator or DarwinBoot can write over the volume while the
+-  // FAT driver is still reading it. The rest of the second and third /memory
+-  // banks stays conventional for DarwinBoot's window.
++  // FAT driver is still reading it. The rest of the upper /memory bank stays
++  // conventional for DarwinBoot's window: 0x85800000..0x140000000 = 2.92 GiB.
+   {"Boot Image",         0x80000000, 0x01000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
+-  {"Ramdisk",            0x81000000, 0x03800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
+-  {"DRAM 0x84800000",    0x84800000, 0x13B800000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,  WRITE_BACK_XN},
++  {"Ramdisk",            0x81000000, 0x04800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
++  {"DRAM 0x85800000",    0x85800000, 0xBA800000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,  WRITE_BACK_XN},
+ 
+   // Other Memory Regions
+   {"IMEM Base",          0x0C100000, 0x00026000, NoHob,  MMAP_IO, INITIALIZED, Conv, NS_DEVICE},
+   {"IMEM Cookie Base",   0x0C125000, 0x00001000, AddDev, MMAP_IO, INITIALIZED, Conv, NS_DEVICE},

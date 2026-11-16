@@ -1,0 +1,165 @@
+name: build-tb128fu-4g64g
+
+# Builds a UniXNU boot.img for THIS tablet: Lenovo TB128FU, 4 GB RAM / 64 GB Micron UFS.
+# Layout expected in this repository (the fork):
+#   board.toml                    - patched for 4 GB / 64 GB (last_lba, dram_size, owned_memory_size)
+#   tb128fu.dtb                   - generated from the tablet's live /sys/firmware/fdt
+#   patches/MemoryMapLib.c.patch  - applied to the Mu-Silicium checkout
+#   patches/GccUfs.h.patch        - applied to the Tb128fuUfs module submodule
+#
+# The payload-macos job (Stage 4/5: XNU kernel) is manual and needs the platform seed secret.
+
+on:
+  push:
+    branches: [ main, master, 4g64g ]
+  workflow_dispatch:
+
+env:
+  PYTHONUNBUFFERED: "1"
+  UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
+
+jobs:
+  boot-image:
+    name: firmware + menu (boot.img)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Check out this fork
+        uses: actions/checkout@v4
+        with:
+          path: UniXNU-tb128fu
+          submodules: false
+
+      - name: Check out the UniXNU driver
+        uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          path: UniXNU
+
+      - name: Check out the firmware (Mu-Silicium, tb128fu branch)
+        uses: actions/checkout@v4
+        with:
+          repository: xVanTuring/uefi-tb128fu
+          ref: tb128fu
+          path: uefi-tb128fu
+          submodules: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake ninja-build mtools device-tree-compiler unifdef \
+            libbsd-dev uuid-dev libssl-dev zlib1g-dev libclang-dev clang llvm
+
+      - name: Build the Linux Mach-O toolchain (patched clang + cctools-port)
+        run: |
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt
+
+      - name: Fetch sources (initialises the module submodules)
+        run: |
+          cd UniXNU
+          ./unixnu fetch -D ../UniXNU-tb128fu
+
+      - name: Apply the 4 GB / 64 GB changes
+        run: |
+          set -eux
+          cp tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+          git -C uefi-tb128fu apply "$PWD"/patches/MemoryMapLib.c.patch
+          git -C UniXNU-tb128fu/drivers/Tb128fuUfs apply "$PWD"/patches/GccUfs.h.patch
+          git -C uefi-tb128fu diff --stat
+          git -C UniXNU-tb128fu/drivers/Tb128fuUfs diff --stat
+          git -C UniXNU-tb128fu diff --stat
+
+      - name: Select the kernel configuration
+        run: |
+          cd UniXNU
+          ./unixnu defconfig tb128fu_defconfig -D ../UniXNU-tb128fu
+          ./unixnu status -D ../UniXNU-tb128fu
+
+      - name: Build package and firmware (runs scripts/check-tb128fu.py)
+        run: |
+          cd UniXNU
+          ./unixnu build package  -D ../UniXNU-tb128fu
+          ./unixnu build firmware -D ../UniXNU-tb128fu
+
+      - name: Pack the boot image
+        run: |
+          cd UniXNU
+          ./unixnu bootimg -D ../UniXNU-tb128fu \
+            --dtb "$UNIXNU_UEFI/Resources/DTBs/tb128fu.dtb" --ramdisk none
+
+      - name: Show the preflight report
+        if: always()
+        run: |
+          for f in $(find . -name check.json); do echo "== $f"; cat "$f"; done
+
+      - name: Upload the images
+        uses: actions/upload-artifact@v4
+        with:
+          name: tb128fu-4g64g-boot
+          path: |
+            UniXNU/out/tb128fu/boot/
+            UniXNU/out/tb128fu/check.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  payload-macos:
+    name: XNU kernel + payload (macOS only, manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    timeout-minutes: 350
+    steps:
+      - name: Check out everything
+        run: |
+          set -eux
+          git clone --depth 1 https://github.com/UniXNU/UniXNU
+          git clone --depth 1 -b tb128fu https://github.com/xVanTuring/uefi-tb128fu
+          git clone --depth 1 "https://github.com/${{ github.repository }}" UniXNU-tb128fu
+          brew install llvm lld cmake ninja mtools dtc unifdef
+
+      - name: Fetch sources and apply the 4 GB / 64 GB changes
+        env:
+          UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu fetch -D ../UniXNU-tb128fu
+          cd ..
+          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+          git -C uefi-tb128fu apply "$PWD"/UniXNU-tb128fu/patches/MemoryMapLib.c.patch
+          git -C UniXNU-tb128fu/drivers/Tb128fuUfs apply "$PWD"/UniXNU-tb128fu/patches/GccUfs.h.patch
+
+      - name: Download the iPad7,1 17.7.11 restore image
+        run: |
+          set -eux
+          mkdir -p ipsw
+          curl -L --retry 3 -o ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw \
+            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+          shasum -a 256 ipsw/*.ipsw || true
+
+      - name: Build the kernel twice (the first link has no PMGR reference)
+        env:
+          UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
+          UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+          UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu ipsw fetch -D ../UniXNU-tb128fu
+          ./unixnu build kernel -D ../UniXNU-tb128fu
+          ./unixnu build kernel -D ../UniXNU-tb128fu
+
+      - name: Upload the kernel objects
+        uses: actions/upload-artifact@v4
+        with:
+          name: tb128fu-4g64g-kernel
+          path: |
+            UniXNU/out/tb128fu/tree/build/**/*.macho
+            UniXNU/out/tb128fu/tree/build/**/*.adt
+          if-no-files-found: warn
+          retention-days: 14

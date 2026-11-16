@@ -1,0 +1,13 @@
+--- a/GccUfs.h
++++ b/GccUfs.h
+@@ -18,9 +18,9 @@
+ // the hypervisor dropped the SMR write for it ("SMMU stream mapping readback", smr=0).
+ #define UFS_STREAM                    0x100
+ // Raw userdata partition of this tablet (sda18 on UFS LUN 0), from its GPT.
+ #define UFS_USERDATA_FIRST            0x222f31ULL
+-#define UFS_USERDATA_LAST             0x1c457faULL
++#define UFS_USERDATA_LAST             0xd5fffaULL
+ 
+ #define GCC_UFS_PHY_GDSCR             0x45004
+ #define GCC_UFS_PHY_AXI_ENABLE        0x45010
+ #define GCC_UFS_PHY_AHB_ENABLE        0x45014
