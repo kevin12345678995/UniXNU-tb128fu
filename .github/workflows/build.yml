@@ -217,7 +217,7 @@ jobs:
           test -f "$MB/Uefi.h"
           clang --target=aarch64-unknown-windows -ffreestanding -fshort-wchar -O1 \
             -I "$MB" -I "$MB/AArch64" \
-            -c UniXNU-tb128fu/tools/uefiapp/tb128fu_spmi_probe.c -o /tmp/tb128fu_probe.o
+            -c UniXNU-tb128fu/tools/uefiapp/tb128fu_gcd_probe.c -o /tmp/tb128fu_probe.o
           lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 \
             /dynamicbase /out:/tmp/BOOTAA64.EFI /tmp/tb128fu_probe.o
           file /tmp/BOOTAA64.EFI || true
