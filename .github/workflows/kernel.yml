@@ -10,6 +10,9 @@ env:
   PYTHONUNBUFFERED: "1"
   UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
   UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+  # The OS root volume of the iPad7,1 17.7.11 image (OS profile [root] os_volume_uuid).
+  # Board schema 1 does not plumb [root] into the kernel step, so it is exported here.
+  XNU_OWNER_ROOT_VOLUME_UUID: 04769D26-2CA0-4825-B443-E2E5F88300F2
 
 jobs:
   kernel:
@@ -53,14 +56,23 @@ jobs:
 
       - name: Restore the Linux Mach-O toolchain
         id: tc
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /opt/unixnu-linux
-          key: unixnu-toolchain-ubuntu2204-v1
+          key: unixnu-toolchain-ubuntu2204-v2
 
       - name: Build the Linux Mach-O toolchain
         if: steps.tc.outputs.cache-hit != 'true'
-        run: sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
+        run: |
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
+          sudo chown -R "$USER" /opt/unixnu-linux
+
+      - name: Save the toolchain cache
+        if: steps.tc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /opt/unixnu-linux
+          key: unixnu-toolchain-ubuntu2204-v2
 
       - name: Install the shims and verify the toolchain
         run: |
