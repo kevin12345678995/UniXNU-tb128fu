@@ -127,9 +127,14 @@ jobs:
           # symbols are on, but those archives are produced after a kernel exists. Turn the two
           # features off for this pass; the second pass turns them back on.
           cd UniXNU
-          sed -i 's/^CONFIG_XNU_VERIFIED_ROOT_PROBE=y/# CONFIG_XNU_VERIFIED_ROOT_PROBE is not set/' out/tb128fu/.config || true
-          sed -i 's/^CONFIG_XNU_SHENG_PMGR=y/# CONFIG_XNU_SHENG_PMGR is not set/' out/tb128fu/.config || true
-          grep -nE 'VERIFIED_ROOT_PROBE|SHENG_PMGR' out/tb128fu/.config || true
+          # The root-binding audit needs the owner-verified block crypto, and both the verified-root
+          # archive and the PMGR bridge are produced only after a kernel exists. Pass 1 runs without
+          # them; pass 2 re-enables them now that the archives are on disk.
+          for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_OWNER_ROOT_AUDIT \
+                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR; do
+            sed -i "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
+          done
+          grep -nE 'VERIFIED_ROOT_PROBE|OWNER_ROOT_|SHENG_PMGR' out/tb128fu/.config || true
           cd ..
           ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu ) > build-kernel.log 2>&1
           rc=$?
@@ -148,9 +153,11 @@ jobs:
         run: |
           set -eux
           cd UniXNU
-          sed -i 's/^# CONFIG_XNU_VERIFIED_ROOT_PROBE is not set/CONFIG_XNU_VERIFIED_ROOT_PROBE=y/' out/tb128fu/.config || true
-          sed -i 's/^# CONFIG_XNU_SHENG_PMGR is not set/CONFIG_XNU_SHENG_PMGR=y/' out/tb128fu/.config || true
-          grep -nE 'VERIFIED_ROOT_PROBE|SHENG_PMGR' out/tb128fu/.config || true
+          for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_OWNER_ROOT_AUDIT \
+                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR; do
+            sed -i "s/^# ${sym} is not set/${sym}=y/" out/tb128fu/.config || true
+          done
+          grep -nE 'VERIFIED_ROOT_PROBE|OWNER_ROOT_|SHENG_PMGR' out/tb128fu/.config || true
           ./unixnu build kernel -D ../UniXNU-tb128fu > ../build-kernel-2.log 2>&1
           tail -n 20 ../build-kernel-2.log
 

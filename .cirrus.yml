@@ -1,0 +1,49 @@
+# Cirrus CI — macOS腿 for the tb128fu port (free for open source: 50 credits/month ≈ 500 macOS minutes).
+# One-time setup: install the Cirrus CI GitHub App on this repository, then push this file.
+
+task:
+  name: macos kernel + payload
+  macos_instance:
+    image: ghcr.io/cirruslabs/macos-sonoma-xcode:latest
+  timeout_in: 120m
+  env:
+    UNIXNU_UEFI: $CIRRUS_WORKING_DIR/uefi-tb128fu
+    UNIXNU_IPSW: $CIRRUS_WORKING_DIR/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+    UNIXNU_UNIQUE_CHIP_ID: 7f3a91c4b6d05e28
+    XNU_OWNER_ROOT_VOLUME_UUID: 04769D26-2CA0-4825-B443-E2E5F88300F2
+    HOMEBREW_NO_AUTO_UPDATE: "1"
+  only_if: $CIRRUS_BRANCH == 'main'
+
+  setup_script:
+    - brew install llvm lld cmake ninja mtools dtc unifdef || true
+    - sw_vers
+    - xcodebuild -version
+    - df -h /
+
+  clone_script:
+    - git clone --depth 1 https://github.com/xVanTuring/UniXNU UniXNU
+    - git clone --depth 1 -b tb128fu https://github.com/xVanTuring/uefi-tb128fu uefi-tb128fu
+    - git clone --depth 1 https://github.com/$CIRRUS_REPO_FULL_NAME device
+
+  build_script:
+    - cd UniXNU && ./unixnu fetch -D ../device
+    - cp device/MemoryMapLib.c uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+    - cp device/GccUfs.h device/drivers/Tb128fuUfs/GccUfs.h
+    - cp device/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+    - mkdir -p ipsw && curl -L -o "$UNIXNU_IPSW" https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+    - cd UniXNU && ./unixnu defconfig tb128fu_defconfig -D ../device && ./unixnu ipsw fetch -D ../device
+    - cd UniXNU && ./unixnu build kernel -D ../device || true
+    - cd UniXNU && ./unixnu build kernel -D ../device
+    - cd UniXNU && ./unixnu build payload -D ../device --unique-chip-id $UNIXNU_UNIQUE_CHIP_ID
+    - cd UniXNU && ./unixnu bootimg -D ../device --dtb "$UNIXNU_UEFI/Resources/DTBs/tb128fu.dtb"
+
+  always:
+    kernel_logs_artifacts:
+      path: "UniXNU/out/tb128fu/logs/**/*.log"
+      format: zip
+    images_artifacts:
+      path: "UniXNU/out/tb128fu/boot/*.img"
+      format: zip
+    kernel_artifacts:
+      path: "UniXNU/out/tb128fu/kernel/*.macho"
+      format: zip
