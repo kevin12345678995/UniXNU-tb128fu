@@ -128,6 +128,8 @@ jobs:
           sed -i 's/^CONFIG_XNU_OWNER_DATA_MOUNT=y/# CONFIG_XNU_OWNER_DATA_MOUNT is not set/' out/tb128fu/.config
           sed -i 's/^CONFIG_XNU_OWNER_BOOT_MANIFEST=y/# CONFIG_XNU_OWNER_BOOT_MANIFEST is not set/' out/tb128fu/.config
           sed -i 's/^CONFIG_XNU_OWNER_CACHE_MOUNT=y/# CONFIG_XNU_OWNER_CACHE_MOUNT is not set/' out/tb128fu/.config
+          sed -i 's/^CONFIG_XNU_OWNER_CACHE_STARTUP=y/# CONFIG_XNU_OWNER_CACHE_STARTUP is not set/' out/tb128fu/.config
+          sed -i 's/^CONFIG_XNU_OWNER_UNION_SYSTEMOS=y/# CONFIG_XNU_OWNER_UNION_SYSTEMOS is not set/' out/tb128fu/.config
           grep -n 'OWNER' out/tb128fu/.config | head -20
           ./unixnu status -D ../UniXNU-tb128fu
           ./unixnu ipsw fetch -D ../UniXNU-tb128fu
