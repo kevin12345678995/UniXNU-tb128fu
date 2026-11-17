@@ -177,7 +177,7 @@ jobs:
           # kernel and a gdb observation. They are not needed for an entry-only kernel.
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('UniXNU-tb128fu/board.toml')
+          p = Path('../UniXNU-tb128fu/board.toml')
           text = p.read_text()
           for line in (
               '  "build-arm-driver.py VirtioMmioBlock --verified-root",\n',
@@ -190,7 +190,7 @@ jobs:
           p.write_text(text)
           print('dropped the audit-dependent archives')
           PY
-          grep -c 'build-virtio-mmio-bindings\|build-software-aes-bindings\|RamBlock' UniXNU-tb128fu/board.toml || true
+          grep -c 'build-virtio-mmio-bindings\|build-software-aes-bindings\|RamBlock' ../UniXNU-tb128fu/board.toml || true
           ./unixnu status -D ../UniXNU-tb128fu
           ./unixnu ipsw fetch -D ../UniXNU-tb128fu
 
