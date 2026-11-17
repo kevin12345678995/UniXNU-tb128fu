@@ -13,6 +13,11 @@
 static EFI_GUID gGopGuid = { 0x9042a9de, 0x23dc, 0x4a38,
                               { 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a } };
 
+// A pointer initialised with the address of a static object makes lld emit a base relocation,
+// which EDK2 requires before it will load the image away from its preferred base.
+static UINT32 gTouch[4] = { 1, 2, 3, 4 };
+static UINT32 *volatile gTouchAnchor = gTouch;
+
 static EFI_GRAPHICS_OUTPUT_PROTOCOL *gGop = NULL;
 
 static UINTN gWidth;
@@ -93,6 +98,7 @@ EFI_STATUS EFIAPI efi_main (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTabl
   }
   gWidth  = gGop->Mode->Info->HorizontalResolution;
   gHeight = gGop->Mode->Info->VerticalResolution;
+  (void)gTouchAnchor;
 
   for (;;) {
     Clear (0x00000000);
