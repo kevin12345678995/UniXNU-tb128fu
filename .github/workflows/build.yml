@@ -145,11 +145,12 @@ jobs:
           boot_block = (
               '  // TB128FU: no usable console input. Boot the first option and never reach a menu.\n'
               '  {\n'
-              '    EFI_BOOT_MANAGER_LOAD_OPTION  Option;\n'
-              '    UINTN                         OptionCount = 0;\n'
-              '    if (!EFI_ERROR (EfiBootManagerGetLoadOptions (&Option, &OptionCount)) && OptionCount > 0) {\n'
-              '      EfiBootManagerBoot (&Option);\n'
-              '      EfiBootManagerFreeLoadOption (&Option);\n'
+              '    UINTN                          OptionCount = 0;\n'
+              '    EFI_BOOT_MANAGER_LOAD_OPTION  *Options;\n'
+              '    Options = EfiBootManagerGetLoadOptions (&OptionCount, LoadOptionTypeBoot);\n'
+              '    if (Options != NULL && OptionCount > 0) {\n'
+              '      EfiBootManagerBoot (&Options[0]);\n'
+              '      EfiBootManagerFreeLoadOptions (Options, OptionCount);\n'
               '    }\n'
               '  }\n'
           )
@@ -181,9 +182,11 @@ jobs:
           set -eux
           # Build against the tree's own EDK2 headers: the struct layouts come from MdePkg, not
           # from hand-written declarations (the v1 probe guessed them and could fault).
+          # MdePkg comes from the fetched feed, which is where the firmware build got it too.
+          MB=$(echo UniXNU/out/feeds/mu_basecore-*/MdePkg/Include)
+          test -f "$MB/Uefi.h"
           clang --target=aarch64-unknown-windows -ffreestanding -fshort-wchar -O1 \
-            -I uefi-tb128fu/Mu_Basecore/MdePkg/Include \
-            -I uefi-tb128fu/Mu_Basecore/MdePkg/Include/AArch64 \
+            -I "$MB" -I "$MB/AArch64" \
             -c UniXNU-tb128fu/tools/uefiapp/tb128fu_probe2.c -o /tmp/tb128fu_probe.o
           lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 \
             /out:/tmp/BOOTAA64.EFI /tmp/tb128fu_probe.o
@@ -213,62 +216,5 @@ jobs:
           path: |
             UniXNU/out/tb128fu/boot/
             UniXNU/out/tb128fu/check.json
-          if-no-files-found: warn
-          retention-days: 14
-
-  payload-macos:
-    name: XNU kernel + payload (macOS only, manual)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-14
-    timeout-minutes: 350
-    steps:
-      - name: Check out everything
-        run: |
-          set -eux
-          git clone --depth 1 https://github.com/UniXNU/UniXNU
-          git clone --depth 1 -b tb128fu https://github.com/xVanTuring/uefi-tb128fu
-          git clone --depth 1 "https://github.com/${{ github.repository }}" UniXNU-tb128fu
-          brew install llvm lld cmake ninja mtools dtc unifdef
-
-      - name: Fetch sources and apply the 4 GB / 64 GB changes
-        env:
-          UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
-        run: |
-          set -eux
-          cd UniXNU
-          ./unixnu fetch -D ../UniXNU-tb128fu
-          cd ..
-          cp UniXNU-tb128fu/MemoryMapLib.c uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
-          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
-          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
-          grep -n "DRAM 0x85800000" uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
-
-      - name: Download the iPad7,1 17.7.11 restore image
-        run: |
-          set -eux
-          mkdir -p ipsw
-          curl -L --retry 3 -o ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw \
-            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
-          shasum -a 256 ipsw/*.ipsw || true
-
-      - name: Build the kernel twice (the first link has no PMGR reference)
-        env:
-          UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
-          UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
-          UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
-        run: |
-          set -eux
-          cd UniXNU
-          ./unixnu ipsw fetch -D ../UniXNU-tb128fu
-          ./unixnu build kernel -D ../UniXNU-tb128fu
-          ./unixnu build kernel -D ../UniXNU-tb128fu
-
-      - name: Upload the kernel objects
-        uses: actions/upload-artifact@v4
-        with:
-          name: tb128fu-4g64g-kernel
-          path: |
-            UniXNU/out/tb128fu/tree/build/**/*.macho
-            UniXNU/out/tb128fu/tree/build/**/*.adt
           if-no-files-found: warn
           retention-days: 14
