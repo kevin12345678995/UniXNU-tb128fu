@@ -131,7 +131,10 @@ jobs:
           # archive and the PMGR bridge are produced only after a kernel exists. Pass 1 runs without
           # them; pass 2 re-enables them now that the archives are on disk.
           for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_OWNER_ROOT_AUDIT \
-                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR; do
+                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR \
+                     CONFIG_XNU_OWNER_CACHE_MOUNT CONFIG_XNU_OWNER_CACHE_STARTUP \
+                     CONFIG_XNU_OWNER_BOOT_MANIFEST CONFIG_XNU_OWNER_DATA_MOUNT \
+                     CONFIG_XNU_OWNER_UNION_SYSTEMOS; do
             sed -i "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
           done
           grep -nE 'VERIFIED_ROOT_PROBE|OWNER_ROOT_|SHENG_PMGR' out/tb128fu/.config || true
@@ -154,7 +157,10 @@ jobs:
           set -eux
           cd UniXNU
           for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_OWNER_ROOT_AUDIT \
-                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR; do
+                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR \
+                     CONFIG_XNU_OWNER_CACHE_MOUNT CONFIG_XNU_OWNER_CACHE_STARTUP \
+                     CONFIG_XNU_OWNER_BOOT_MANIFEST CONFIG_XNU_OWNER_DATA_MOUNT \
+                     CONFIG_XNU_OWNER_UNION_SYSTEMOS; do
             sed -i "s/^# ${sym} is not set/${sym}=y/" out/tb128fu/.config || true
           done
           grep -nE 'VERIFIED_ROOT_PROBE|OWNER_ROOT_|SHENG_PMGR' out/tb128fu/.config || true
