@@ -1,0 +1,175 @@
+name: payload-tb128fu-4g64g
+
+# Stage 4: build the XNU kernel for this tablet (4 GB / 64 GB TB128FU) on a Linux runner.
+# The toolchain is cached under /opt/unixnu-linux, so a retry costs minutes, not an hour.
+
+on:
+  workflow_dispatch:
+
+env:
+  PYTHONUNBUFFERED: "1"
+  UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
+  UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+  # The OS root volume of the iPad7,1 17.7.11 image (OS profile [root] os_volume_uuid).
+  # Board schema 1 does not plumb [root] into the kernel step, so it is exported here.
+  XNU_OWNER_ROOT_VOLUME_UUID: 04769D26-2CA0-4825-B443-E2E5F88300F2
+
+jobs:
+  kernel:
+    name: XNU kernel (Linux toolchain)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Check out this fork
+        uses: actions/checkout@v4
+        with:
+          path: UniXNU-tb128fu
+          submodules: false
+
+      - name: Check out the UniXNU driver
+        uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          path: UniXNU
+
+      - name: Check out the firmware (Mu-Silicium, tb128fu branch)
+        uses: actions/checkout@v4
+        with:
+          repository: xVanTuring/uefi-tb128fu
+          ref: tb128fu
+          path: uefi-tb128fu
+          submodules: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git build-essential cmake ninja-build mtools device-tree-compiler unifdef \
+            libbsd-dev uuid-dev libssl-dev zlib1g-dev libclang-dev clang llvm
+
+      - name: Prepare the toolchain prefix for caching
+        run: sudo mkdir -p /opt/unixnu-linux && sudo chown -R "$USER" /opt/unixnu-linux
+
+      - name: Restore the Linux Mach-O toolchain
+        id: tc
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/unixnu-linux
+          key: unixnu-toolchain-ubuntu2204-v2
+
+      - name: Build the Linux Mach-O toolchain
+        if: steps.tc.outputs.cache-hit != 'true'
+        run: |
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
+          sudo chown -R "$USER" /opt/unixnu-linux
+
+      - name: Save the toolchain cache
+        if: steps.tc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /opt/unixnu-linux
+          key: unixnu-toolchain-ubuntu2204-v2
+
+      - name: Install the shims and verify the toolchain
+        run: |
+          set -eux
+          sudo install -m 755 UniXNU/scripts/linux/xcrun UniXNU/scripts/linux/plutil UniXNU/scripts/linux/codesign /usr/bin/
+          sudo install -m 755 UniXNU/scripts/linux/clang UniXNU/scripts/linux/clang++ UniXNU/scripts/linux/cc \
+            UniXNU/scripts/linux/install UniXNU/scripts/linux/gm4 /opt/unixnu-linux/CommandLineTools/usr/bin/ 2>/dev/null || true
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt || \
+            sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
+
+      - name: Install unifdef 2.12 (Ubuntu's 2.10 rejects a multi-line comment in a #endif directive)
+        run: |
+          set -eux
+          sudo apt-get remove -y unifdef || true
+          git clone --depth 1 --branch unifdef-2.12 https://github.com/fanf2/unifdef /tmp/unifdef-src
+          make -C /tmp/unifdef-src
+          sudo install -m 755 /tmp/unifdef-src/unifdef /usr/local/bin/unifdef
+          command -v unifdef
+          unifdef -V || true
+
+      - name: Fetch sources (initialises the module submodules)
+        run: |
+          cd UniXNU
+          ./unixnu fetch -D ../UniXNU-tb128fu
+
+      - name: Apply the 4 GB / 64 GB changes
+        run: |
+          set -eux
+          MM=uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+          cp UniXNU-tb128fu/MemoryMapLib.c "$MM"
+          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+          grep -n "DRAM 0x85800000" "$MM"
+          grep -n "0xd5fffa" UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+
+      - name: Download the iPad7,1 17.7.11 restore image
+        run: |
+          set -eux
+          mkdir -p "$(dirname "$UNIXNU_IPSW")"
+          if [ ! -s "$UNIXNU_IPSW" ]; then
+            curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
+              "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+          fi
+          ls -l "$UNIXNU_IPSW"
+
+      - name: Select the kernel configuration and drop the owner Data chain
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu defconfig tb128fu_defconfig -D ../UniXNU-tb128fu
+          # Stage 4: an owner Data mount needs the 8 GiB seed that only macOS can grow, and the boot
+          # manifest needs the signed root policies. Both are dropped so the kernel can be packed and booted.
+          sed -i 's/^CONFIG_XNU_OWNER_DATA_MOUNT=y/# CONFIG_XNU_OWNER_DATA_MOUNT is not set/' out/tb128fu/.config
+          sed -i 's/^CONFIG_XNU_OWNER_BOOT_MANIFEST=y/# CONFIG_XNU_OWNER_BOOT_MANIFEST is not set/' out/tb128fu/.config
+          sed -i 's/^CONFIG_XNU_OWNER_CACHE_MOUNT=y/# CONFIG_XNU_OWNER_CACHE_MOUNT is not set/' out/tb128fu/.config
+          grep -n 'OWNER' out/tb128fu/.config | head -20
+          ./unixnu status -D ../UniXNU-tb128fu
+          ./unixnu ipsw fetch -D ../UniXNU-tb128fu
+
+      - name: Build the kernel (first link has no PMGR reference)
+        run: |
+          set +e
+          ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu )
+          rc=$?
+          echo "build kernel exit=$rc"
+          if [ $rc -ne 0 ]; then
+            for f in $(find UniXNU/out/tb128fu/logs -name '*.log' 2>/dev/null); do echo "===== $f"; tail -n 120 "$f"; done
+          fi
+          exit $rc
+
+      - name: Build the kernel again (links the PMGR bridge)
+        run: |
+          cd UniXNU
+          ./unixnu build kernel -D ../UniXNU-tb128fu
+
+      - name: Build the payload without a Data seed (owner Data mount disabled)
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu build payload -D ../UniXNU-tb128fu --unique-chip-id 7f3a91c4b6d05e28
+
+      - name: Pack the boot image
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu bootimg -D ../UniXNU-tb128fu \
+            --dtb "$UNIXNU_UEFI/Resources/DTBs/tb128fu.dtb"
+          ls -l out/tb128fu/boot/
+
+      - name: Upload the images and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tb128fu-4g64g-stage4
+          path: |
+            UniXNU/out/tb128fu/boot/
+            UniXNU/out/tb128fu/logs/
+            UniXNU/out/tb128fu/check.json
+          if-no-files-found: warn
+          retention-days: 14
