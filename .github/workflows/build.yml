@@ -142,30 +142,8 @@ jobs:
           bm = Path('uefi-tb128fu/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c')
           b = bm.read_text()
           marker = '  // Execute Secondary After Console\n  DeviceBootManagerAfterConsole ();'
-          boot_block = (
-              '  // TB128FU: paint the panel from the firmware itself and stay here.\n'
-              '  if (GopProtocol != NULL && GopProtocol->Mode != NULL && GopProtocol->Mode->Info != NULL) {\n'
-              '    UINT32  *Base;\n'
-              '    UINTN    W;\n'
-              '    UINTN    H;\n'
-              '    UINTN    S;\n'
-              '    UINTN    x;\n'
-              '    UINTN    y;\n'
-              '    Base = (UINT32 *)(UINTN)GopProtocol->Mode->FrameBufferBase;\n'
-              '    W    = GopProtocol->Mode->Info->HorizontalResolution;\n'
-              '    H    = GopProtocol->Mode->Info->VerticalResolution;\n'
-              '    S    = GopProtocol->Mode->Info->PixelsPerScanLine;\n'
-              '    for (y = 0; y < H; y++) {\n'
-              '      for (x = 0; x < W; x++) {\n'
-              '        Base[y * S + x] = ((((x / 96) + (y / 96)) & 1) != 0) ? 0x00FF0000 : 0x0000FFFF;\n'
-              '      }\n'
-              '    }\n'
-              '    for (;;) {\n'
-              '      gBS->Stall (1000000);\n'
-              '    }\n'
-              '  }\n'
-          )
-          if marker in b and 'never reach a menu' not in b:
+          boot_block = ''
+          if boot_block and marker in b and 'never reach a menu' not in b:
               b = b.replace(marker, boot_block + marker, 1)
               bm.write_text(b)
           print('bds direct boot:', 'never reach a menu' in bm.read_text())
@@ -178,6 +156,34 @@ jobs:
               m = m.replace(old, new)
               mc.write_text(m)
           print('menu auto-boot patch:', 'TB128FU: no key input' in mc.read_text())
+          # 5) With no config file the built-in configuration is '[Return to firmware]' and the
+          #    fallback loaders are appended after it, so a timeout exited to the firmware menu.
+          #    Make the first fallback loader the default instead.
+          cc = Path('UniXNU/package/UniXNUPkg/Library/UniXNULib/Config.c')
+          c = cc.read_text()
+          old_call = '    if (AddFallbackLoaders (Config, ImageHandle) == 0) {'
+          new_call = ('    {\n'
+                      '      UINTN  BeforeLoaders = Config->EntryCount;\n'
+                      '      if (AddFallbackLoaders (Config, ImageHandle) == 0) {')
+          if old_call in c and 'BeforeLoaders' not in c:
+              c = c.replace(old_call, new_call, 1)
+              # close the extra block and set the default right after the if/else of the notice
+              old_tail = '      UniXNULog ("config: no boot entry found");\n    }'
+              new_tail = ('      UniXNULog ("config: no boot entry found");\n'
+                          '      }\n'
+                          '      Config->DefaultIndex = (Config->EntryCount > BeforeLoaders) ? BeforeLoaders : 0;\n'
+                          '    }')
+              c = c.replace(old_tail, new_tail, 1)
+              cc.write_text(c)
+          if 'BeforeLoaders' in c:
+              pos = c.find('BeforeLoaders) ? BeforeLoaders : 0;')
+              overwrite = '    Config->DefaultIndex = 0;'
+              kill = c.find(overwrite, pos)
+              if kill >= 0:
+                  c = c[:kill] + c[kill + len(overwrite):]
+                  cc.write_text(c)
+          print('default loader patch:', 'BeforeLoaders' in cc.read_text())
+          print('stale default cleared:', cc.read_text().find('Config->DefaultIndex = 0;', cc.read_text().find('BeforeLoaders')) < 0)
           PY
           grep -n 'TB128FU: no usable key input' uefi-tb128fu/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/KeyCallback.c || true
           grep -n 'PcdPlatformBootTimeOut' uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/tb128fu.dsc || true
