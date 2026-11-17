@@ -113,6 +113,28 @@ jobs:
             "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
           ls -l "$UNIXNU_IPSW"
 
+      - name: Drop the archives that need a research-kernel audit
+        run: |
+          set -eux
+          # build-virtio-mmio-bindings.py reads build/storage-abi/interface-audit.json, which upstream
+          # documents as needing a compiled kernel and a gdb observation. The storage binding is only
+          # for the UFS root path, so it is out of scope for an entry-only kernel.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('UniXNU-tb128fu/board.toml')
+          text = p.read_text()
+          for line in (
+              '  "build-arm-driver.py VirtioMmioBlock --verified-root",\n',
+              '  "build-virtio-mmio-bindings.py --component VirtioMmioBlock --directory build/virtio-mmio-block-verified",\n',
+              '  "build-arm-driver.py RamBlock",\n',
+              '  "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",\n',
+              '  "build-software-aes-bindings.py",\n',
+          ):
+              text = text.replace(line, '')
+          p.write_text(text)
+          print('pruned')
+          PY
+          grep -c 'build-virtio-mmio-bindings' UniXNU-tb128fu/board.toml || true
       - name: Select the configuration and fetch the IPSW components
         run: |
           cd UniXNU

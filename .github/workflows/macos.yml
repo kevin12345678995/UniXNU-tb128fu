@@ -24,7 +24,7 @@ env:
 jobs:
   payload:
     name: kernel + payload + boot.img (macOS)
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 350
     steps:
       - name: Check out this fork
