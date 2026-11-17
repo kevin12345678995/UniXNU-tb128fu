@@ -156,34 +156,47 @@ jobs:
               m = m.replace(old, new)
               mc.write_text(m)
           print('menu auto-boot patch:', 'TB128FU: no key input' in mc.read_text())
-          # 5) With no config file the built-in configuration is '[Return to firmware]' and the
-          #    fallback loaders are appended after it, so a timeout exited to the firmware menu.
-          #    Make the first fallback loader the default instead.
+          # 5) Built-in configuration ends with action entries (Return to firmware, Tools) and
+          #    AddFallbackLoaders inserts the volume loaders before them, so a numeric index lands
+          #    in the actions. Select the loader entry by title instead.
           cc = Path('UniXNU/package/UniXNUPkg/Library/UniXNULib/Config.c')
           c = cc.read_text()
-          old_call = '    if (AddFallbackLoaders (Config, ImageHandle) == 0) {'
-          new_call = ('    {\n'
-                      '      UINTN  BeforeLoaders = Config->EntryCount;\n'
-                      '      if (AddFallbackLoaders (Config, ImageHandle) == 0) {')
-          if old_call in c and 'BeforeLoaders' not in c:
-              c = c.replace(old_call, new_call, 1)
-              # close the extra block and set the default right after the if/else of the notice
-              old_tail = '      UniXNULog ("config: no boot entry found");\n    }'
-              new_tail = ('      UniXNULog ("config: no boot entry found");\n'
-                          '      }\n'
-                          '      Config->DefaultIndex = (Config->EntryCount > BeforeLoaders) ? BeforeLoaders : 0;\n'
-                          '    }')
-              c = c.replace(old_tail, new_tail, 1)
+          old_block = (
+              '    if (AddFallbackLoaders (Config, ImageHandle) == 0) {\n'
+              '      //\n'
+              '      // Only the actions are left. Say so instead of showing a menu that\n'
+              '      // looks complete.\n'
+              '      //\n'
+              '      AsciiStrCpyS (Config->Notice, sizeof (Config->Notice), "no boot entry found");\n'
+              '      UniXNULog ("config: no boot entry found");\n'
+              '    }\n'
+              '\n'
+              '    Config->DefaultIndex = 0;\n'
+          )
+          new_block = (
+              '    {\n'
+              '      UINTN  FirstLoader = (UINTN)-1;\n'
+              '      UINTN  Walk;\n'
+              '\n'
+              '      if (AddFallbackLoaders (Config, ImageHandle) == 0) {\n'
+              '        AsciiStrCpyS (Config->Notice, sizeof (Config->Notice), "no boot entry found");\n'
+              '        UniXNULog ("config: no boot entry found");\n'
+              '      }\n'
+              '\n'
+              '      for (Walk = 0; Walk < Config->EntryCount; Walk++) {\n'
+              '        if ((Config->Entries[Walk].Title != NULL) &&\n'
+              '            (StrnCmp (Config->Entries[Walk].Title, L"EFI loader", 10) == 0)) {\n'
+              '          FirstLoader = Walk;\n'
+              '          break;\n'
+              '        }\n'
+              '      }\n'
+              '      Config->DefaultIndex = (FirstLoader != (UINTN)-1) ? FirstLoader : 0;\n'
+              '    }\n'
+          )
+          if old_block in c and 'FirstLoader' not in c:
+              c = c.replace(old_block, new_block, 1)
               cc.write_text(c)
-          if 'BeforeLoaders' in c:
-              pos = c.find('BeforeLoaders) ? BeforeLoaders : 0;')
-              overwrite = '    Config->DefaultIndex = 0;'
-              kill = c.find(overwrite, pos)
-              if kill >= 0:
-                  c = c[:kill] + c[kill + len(overwrite):]
-                  cc.write_text(c)
-          print('default loader patch:', 'BeforeLoaders' in cc.read_text())
-          print('stale default cleared:', cc.read_text().find('Config->DefaultIndex = 0;', cc.read_text().find('BeforeLoaders')) < 0)
+          print('loader-by-title patch:', 'FirstLoader' in cc.read_text())
           PY
           grep -n 'TB128FU: no usable key input' uefi-tb128fu/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/KeyCallback.c || true
           grep -n 'PcdPlatformBootTimeOut' uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/tb128fu.dsc || true
