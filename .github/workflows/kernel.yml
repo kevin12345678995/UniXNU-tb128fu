@@ -1,7 +1,8 @@
 name: kernel-tb128fu-4g64g
 
-# Stage 4: build the XNU kernel for this tablet (4 GB / 64 GB TB128FU) on a Linux runner.
-# The toolchain is cached under /opt/unixnu-linux, so a retry costs minutes, not an hour.
+# XNU kernel for TB128FU (4 GB / 64 GB) built with the board's own driver revision:
+# xVanTuring/UniXNU carries the Tb128fuUfs and Adreno610 components and the --sm6225 switch
+# that the upstream UniXNU catalog does not have.
 
 on:
   workflow_dispatch:
@@ -10,13 +11,11 @@ env:
   PYTHONUNBUFFERED: "1"
   UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
   UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
-  # The OS root volume of the iPad7,1 17.7.11 image (OS profile [root] os_volume_uuid).
-  # Board schema 1 does not plumb [root] into the kernel step, so it is exported here.
   XNU_OWNER_ROOT_VOLUME_UUID: 04769D26-2CA0-4825-B443-E2E5F88300F2
 
 jobs:
   kernel:
-    name: XNU kernel (Linux toolchain)
+    name: XNU kernel (board driver, Linux toolchain)
     runs-on: ubuntu-22.04
     timeout-minutes: 300
     steps:
@@ -26,10 +25,11 @@ jobs:
           path: UniXNU-tb128fu
           submodules: false
 
-      - name: Check out the UniXNU driver
+      - name: Check out the board's UniXNU driver
         uses: actions/checkout@v4
         with:
-          repository: UniXNU/UniXNU
+          repository: xVanTuring/UniXNU
+          ref: 85d8ace4b50efb1bfabfb2500b448075553fd0be
           path: UniXNU
 
       - name: Check out the firmware (Mu-Silicium, tb128fu branch)
@@ -78,83 +78,77 @@ jobs:
         run: |
           set -eux
           sudo install -m 755 UniXNU/scripts/linux/xcrun UniXNU/scripts/linux/plutil UniXNU/scripts/linux/codesign /usr/bin/
-          sudo install -m 755 UniXNU/scripts/linux/clang UniXNU/scripts/linux/clang++ UniXNU/scripts/linux/cc \
-            UniXNU/scripts/linux/install UniXNU/scripts/linux/gm4 /opt/unixnu-linux/CommandLineTools/usr/bin/ 2>/dev/null || true
           sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt || \
             sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
 
-      - name: Install unifdef 2.12 (Ubuntu's 2.10 rejects a multi-line comment in a #endif directive)
+      - name: Install unifdef 2.12
         run: |
           set -eux
           sudo apt-get remove -y unifdef || true
           git clone --depth 1 --branch unifdef-2.12 https://github.com/fanf2/unifdef /tmp/unifdef-src
           make -C /tmp/unifdef-src
           sudo install -m 755 /tmp/unifdef-src/unifdef /usr/local/bin/unifdef
-          command -v unifdef
           unifdef -V || true
 
-      - name: Fetch sources (initialises the module submodules)
+      - name: Fetch sources
         run: |
           cd UniXNU
           ./unixnu fetch -D ../UniXNU-tb128fu
 
-      - name: Apply the 4 GB / 64 GB changes
+      - name: Apply the 4 GB / 64 GB files
         run: |
           set -eux
           MM=uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
           cp UniXNU-tb128fu/MemoryMapLib.c "$MM"
           cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
           cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
-          grep -n "DRAM 0x85800000" "$MM"
-          grep -n "0xd5fffa" UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+          grep -n 'DRAM 0x85800000' "$MM"
+          grep -n '0xd5fffa' UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
 
       - name: Download the iPad7,1 17.7.11 restore image
         run: |
           set -eux
           mkdir -p "$(dirname "$UNIXNU_IPSW")"
-          if [ ! -s "$UNIXNU_IPSW" ]; then
-            curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
-              "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
-          fi
+          curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
+            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
           ls -l "$UNIXNU_IPSW"
 
-      - name: Select the kernel configuration and fetch the IPSW components
+      - name: Select the configuration and fetch the IPSW components
         run: |
           cd UniXNU
           ./unixnu defconfig tb128fu_defconfig -D ../UniXNU-tb128fu
           ./unixnu status -D ../UniXNU-tb128fu
           ./unixnu ipsw fetch -D ../UniXNU-tb128fu
 
-      - name: Build the kernel (first link has no PMGR reference)
+      - name: Build the kernel (first pass)
         run: |
           set +e
-          ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu )
+          ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu ) > build-kernel.log 2>&1
           rc=$?
-          echo "build kernel exit=$rc"
+          echo "first pass exit=$rc"
           if [ $rc -ne 0 ]; then
-            echo '========== build logs =========='
-            for f in $(find UniXNU/out/tb128fu/logs -name '*.log' 2>/dev/null); do
-              echo "===== $f"; tail -n 150 "$f";
-            done
-            echo '========== xnu make output =========='
-            tail -n 200 UniXNU/out/tb128fu/tree/.cache/xnu-work/*.log 2>/dev/null || true
+            echo '==== driver errors ===='
+            grep -n -i -m 40 'error\|not found\|missing\|undefined\|failed' build-kernel.log | tail -25 || true
+            echo '==== last 40 lines ===='
+            tail -n 40 build-kernel.log || true
+            echo '==== kernel-bootstrap.log tail ===='
+            tail -n 30 UniXNU/out/tb128fu/logs/kernel-bootstrap.log 2>/dev/null || true
           fi
           exit $rc
 
       - name: Build the kernel again (links the PMGR bridge)
-        if: success()
         run: |
           cd UniXNU
           ./unixnu build kernel -D ../UniXNU-tb128fu
 
-      - name: Upload the build logs
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tb128fu-4g64g-kernel-logs
+          name: tb128fu-kernel-logs
           path: |
+            build-kernel.log
             UniXNU/out/tb128fu/logs/
-            UniXNU/out/tb128fu/tree/build/**/xnu*.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -162,7 +156,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tb128fu-4g64g-kernel
+          name: tb128fu-kernel
           path: |
             UniXNU/out/tb128fu/kernel/
             UniXNU/out/tb128fu/tree/build/**/*.macho

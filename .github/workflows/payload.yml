@@ -223,11 +223,16 @@ jobs:
       - name: Build the kernel (first link has no PMGR reference)
         run: |
           set +e
-          ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu )
+          ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu ) > build-kernel.log 2>&1
           rc=$?
           echo "build kernel exit=$rc"
           if [ $rc -ne 0 ]; then
-            for f in $(find UniXNU/out/tb128fu/logs -name '*.log' 2>/dev/null); do echo "===== $f"; tail -n 120 "$f"; done
+            echo '========== driver errors =========='
+            grep -n -i -m 40 'error\|not found\|missing\|undefined\|failed\|cannot' build-kernel.log | tail -25 || true
+            echo '========== last 40 lines =========='
+            tail -n 40 build-kernel.log || true
+            echo '========== kernel-bootstrap.log tail =========='
+            tail -n 30 UniXNU/out/tb128fu/logs/kernel-bootstrap.log 2>/dev/null || true
           fi
           exit $rc
 
