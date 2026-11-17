@@ -8,6 +8,12 @@
 static EFI_GUID gGopGuid = { 0x9042a9de, 0x23dc, 0x4a38,
                               { 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a } };
 
+// EDK2's PE loader rejects an image that has no base relocation table when it cannot be loaded at
+// its preferred base. This absolute pointer forces lld to emit one (.reloc).
+static UINT32 gPaletteSeed[6] = { 0x00FF0000, 0x0000FF00, 0x000000FF,
+                                  0x00FFFF00, 0x00FF00FF, 0x00FFFFFF };
+static UINT32 *volatile gPaletteAnchor = gPaletteSeed;
+
 static VOID Paint (EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop, UINT32 Colour, UINTN FilledW)
 {
   EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *Mode = Gop->Mode;
@@ -49,8 +55,7 @@ EFI_STATUS EFIAPI efi_main (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTabl
   EFI_BOOT_SERVICES            *BS = SystemTable->BootServices;
   EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop = NULL;
   EFI_STATUS                    Status;
-  static UINT32 Palette[6] = { 0x00FF0000, 0x0000FF00, 0x000000FF,
-                               0x00FFFF00, 0x00FF00FF, 0x00FFFFFF };
+  UINT32 *Palette = gPaletteAnchor;
   UINT32 Step;
   UINTN  Width;
 

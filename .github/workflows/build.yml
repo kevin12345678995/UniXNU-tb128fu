@@ -189,8 +189,19 @@ jobs:
             -I "$MB" -I "$MB/AArch64" \
             -c UniXNU-tb128fu/tools/uefiapp/tb128fu_probe2.c -o /tmp/tb128fu_probe.o
           lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 \
-            /out:/tmp/BOOTAA64.EFI /tmp/tb128fu_probe.o
+            /dynamicbase /out:/tmp/BOOTAA64.EFI /tmp/tb128fu_probe.o
           file /tmp/BOOTAA64.EFI || true
+          # An EFI image without a base relocation table cannot be loaded away from its preferred
+          # base, which is exactly how EDK2 loads it. Fail here instead of on the tablet.
+          python3 - <<'PY'
+          import struct
+          d = open('/tmp/BOOTAA64.EFI', 'rb').read()
+          pe = struct.unpack_from('<I', d, 0x3c)[0]
+          optsize = struct.unpack_from('<H', d, pe + 20)[0]
+          reloc_rva, reloc_size = struct.unpack_from('<II', d, pe + 24 + 112 + 5 * 8)
+          print('reloc: rva=0x%x size=%d' % (reloc_rva, reloc_size))
+          assert reloc_size > 0, 'the EFI image has no base relocation table'
+          PY
           ls -l /tmp/BOOTAA64.EFI
           # 8 MiB is below the FAT32 cluster minimum, so let mtools pick FAT16 here
           mformat -C -T 16384 -v TB128FUESP -i /tmp/payload.img ::
