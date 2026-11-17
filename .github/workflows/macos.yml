@@ -63,6 +63,19 @@ jobs:
           xcodebuild -version
           df -h /
 
+      - name: Make the archive builder tolerate unknown -Wno flags
+        run: |
+          # The archive builder replays XNU's compile records, which pin Apple's clang; older Apple clang
+          # does not know every -Wno flag the list carries, and -Werror turns that into a failure.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('UniXNU/scripts/build-arm-driver.py')
+          s = p.read_text()
+          if '-Wno-unknown-warning-option' not in s:
+              s = s.replace("'-Wall', '-Wextra', '-Werror',", "'-Wall', '-Wextra', '-Werror', '-Wno-unknown-warning-option',", 1)
+              p.write_text(s)
+          print('tolerant flags:', '-Wno-unknown-warning-option' in p.read_text())
+          PY
       - name: Fetch sources
         run: |
           cd UniXNU
