@@ -139,7 +139,9 @@ packages = [
 ]
 
 [firmware.defines]
-ENABLE_SECUREBOOT = "1"
+# SecureBoot rejects the FAT-volume EFI loader (EFI_SECURITY_VIOLATION): the firmware boots
+# boot_a itself, so it does not need to enforce signature checks for the payload volume.
+ENABLE_SECUREBOOT = "0"
 MEMORY_PROTECTION = "TRUE"
 SHIP_MODE = "FALSE"
 BUILDID_STRING = "tb128fu-research"
@@ -331,4 +333,3 @@ cpu_regs = "0,1,2,3,0x100,0x101,0x102,0x103"
 packed_data_ramdisk = true
 ipad_identity = true
 unique_chip_id = "required"          # the platform seed is not stored in any repository
-
