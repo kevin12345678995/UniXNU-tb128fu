@@ -1,0 +1,14 @@
+name: macos-probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - name: Say hello from macOS
+        run: |
+          sw_vers
+          uname -a
+          which hdiutil
+          df -h /
