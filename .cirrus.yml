@@ -46,4 +46,4 @@ task:
       format: zip
     kernel_artifacts:
       path: "UniXNU/out/tb128fu/kernel/*.macho"
-      format: zip
+      format: zip# trigger probe 2026-11-17T15:24:09.6625208+08:00
