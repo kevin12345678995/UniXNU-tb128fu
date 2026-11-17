@@ -124,6 +124,8 @@ jobs:
               '  "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",\n',
               '  "build-software-aes-bindings.py",\n',
               '  "build-verified-root-key.py --pin 70a5ea346d2d779a7ef43eb4ed8b17f54488e160d8c2a6d6420969664e3ae798",\n',
+              '  "build-arm-driver.py SoftwareAES",\n',
+              '  "build-adreno610.py",\n',
           ):
               text = text.replace(line, '')
           # The UFS driver references the VerifiedRoot kit (_vr_open/_vr_verify_block), whose builder
@@ -133,7 +135,7 @@ jobs:
           p.write_text(text)
           # pass 2 rebuilds the staged accelerator (it reads the first pass's kernel). The display archive
           # also needs a UniXNU-qemu reference tree this repo does not carry, so it stays out.
-          pass2 = text.replace('  "build-gop-legacy-display.py",\n', '')
+          pass2 = text.replace('  "build-gop-legacy-display.py",\n', '').replace('  "build-adreno740-accelerator.py --component Adreno610",\n', '')
           Path('UniXNU-tb128fu/board.toml.pass2').write_text(pass2)
           for line in (
               '  "build-adreno740-accelerator.py --component Adreno610",\n',
@@ -154,17 +156,21 @@ jobs:
                      CONFIG_XNU_OWNER_BOOT_MANIFEST CONFIG_XNU_OWNER_DATA_MOUNT \
                      CONFIG_XNU_OWNER_UNION_SYSTEMOS CONFIG_XNU_NATIVE_LEGACY_DISPLAY \
                      CONFIG_XNU_NATIVE_VIRTIO_BLOCK CONFIG_XNU_NATIVE_RAM_BLOCK \
-                     CONFIG_XNU_BOOT_PROGRESS CONFIG_XNU_NATIVE_UFS; do
+                     CONFIG_XNU_BOOT_PROGRESS CONFIG_XNU_NATIVE_UFS \
+                     CONFIG_XNU_NATIVE_AES CONFIG_XNU_NATIVE_ADRENO CONFIG_XNU_TRUST_CACHE_RUNTIME; do
             sed -i '' "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
           done
           # The archive paths of the pruned builders must go as well: the driver refuses to start
           # when a *_ARCHIVE path points at a file that this pass does not build.
           sed -i '' 's|^CONFIG_XNU_VERIFIED_ROOT_ARCHIVE=.*|# CONFIG_XNU_VERIFIED_ROOT_ARCHIVE is not set|' out/tb128fu/.config || true
           sed -i '' 's|^CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE=.*|# CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE is not set|' out/tb128fu/.config || true
+          sed -i '' 's|^CONFIG_XNU_NATIVE_ADRENO_ARCHIVE=.*|# CONFIG_XNU_NATIVE_ADRENO_ARCHIVE is not set|' out/tb128fu/.config || true
           # Hard assertion: fail here, in seconds, instead of at the end of the archive phase.
           for check in '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE=' '^CONFIG_XNU_VERIFIED_ROOT_ARCHIVE=' \
                        '^CONFIG_XNU_NATIVE_RAM_BLOCK=y' '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y' \
                        '^CONFIG_XNU_BOOT_PROGRESS=y' '^CONFIG_XNU_NATIVE_UFS=y' \
+                       '^CONFIG_XNU_NATIVE_AES=y' '^CONFIG_XNU_NATIVE_ADRENO=y' \
+                       '^CONFIG_XNU_TRUST_CACHE_RUNTIME=y' '^CONFIG_XNU_NATIVE_ADRENO_ARCHIVE=' \
                        '^CONFIG_XNU_VERIFIED_ROOT_PROBE=y'; do
             if grep -q "$check" out/tb128fu/.config; then
               echo "assertion failed: $check is still set"
