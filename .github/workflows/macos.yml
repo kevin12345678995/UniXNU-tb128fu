@@ -61,10 +61,21 @@ jobs:
       - name: Install the host tools
         run: |
           set -eux
-          brew install llvm lld cmake ninja mtools dtc unifdef
           sw_vers
           xcodebuild -version
           df -h /
+          # The image already carries Xcode, cmake, ninja and llvm; build unifdef from source in
+          # seconds instead of a brew install, and only fetch what the kernel step actually needs.
+          if ! command -v unifdef >/dev/null; then
+            git clone --depth 1 --branch unifdef-2.12 https://github.com/fanf2/unifdef /tmp/unifdef-src
+            make -C /tmp/unifdef-src
+            sudo install -m 755 /tmp/unifdef-src/unifdef /usr/local/bin/unifdef
+          fi
+          unifdef -V || true
+          ( brew list mtools >/dev/null 2>&1 || brew install mtools ) &
+          ( brew list dtc    >/dev/null 2>&1 || brew install dtc ) &
+          wait
+          for t in cmake ninja clang xcrun mtools dtc unifdef; do printf '%-10s ' "$t"; command -v "$t" || echo missing; done
 
       - name: Make the archive builder tolerate unknown -Wno flags
         run: |
