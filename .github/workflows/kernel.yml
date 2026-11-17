@@ -143,6 +143,7 @@ jobs:
               '  "build-arm-driver.py RamBlock",\n',
               '  "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",\n',
               '  "build-software-aes-bindings.py",\n',
+              '  "build-verified-root-key.py --pin 70a5ea346d2d779a7ef43eb4ed8b17f54488e160d8c2a6d6420969664e3ae798",\n',
           ):
               text = text.replace(line, '')
           p.write_text(text)

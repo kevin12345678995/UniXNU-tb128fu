@@ -120,6 +120,7 @@ jobs:
               '  "build-arm-driver.py RamBlock",\n',
               '  "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",\n',
               '  "build-software-aes-bindings.py",\n',
+              '  "build-verified-root-key.py --pin 70a5ea346d2d779a7ef43eb4ed8b17f54488e160d8c2a6d6420969664e3ae798",\n',
           ):
               text = text.replace(line, '')
           p.write_text(text)
@@ -151,8 +152,7 @@ jobs:
         run: |
           set -eux
           cd UniXNU
-          for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_OWNER_ROOT_AUDIT \
-                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR; do
+          for sym in CONFIG_XNU_SHENG_PMGR; do
             sed -i '' "s/^# ${sym} is not set/${sym}=y/" out/tb128fu/.config || true
           done
           ./unixnu build kernel -D ../UniXNU-tb128fu > ../build-kernel-2.log 2>&1
