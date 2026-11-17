@@ -131,7 +131,8 @@ jobs:
             /out:/tmp/BOOTAA64.EFI /tmp/tb128fu_probe.o
           file /tmp/BOOTAA64.EFI || true
           ls -l /tmp/BOOTAA64.EFI
-          mformat -C -F -T 16384 -v TB128FUESP -i /tmp/payload.img ::
+          # 8 MiB is below the FAT32 cluster minimum, so let mtools pick FAT16 here
+          mformat -C -T 16384 -v TB128FUESP -i /tmp/payload.img ::
           mmd -i /tmp/payload.img ::/EFI ::/EFI/BOOT
           mcopy -i /tmp/payload.img /tmp/BOOTAA64.EFI ::/EFI/BOOT/BOOTAA64.EFI
           mdir -i /tmp/payload.img ::/EFI/BOOT
