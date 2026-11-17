@@ -120,9 +120,17 @@ jobs:
           ./unixnu status -D ../UniXNU-tb128fu
           ./unixnu ipsw fetch -D ../UniXNU-tb128fu
 
-      - name: Build the kernel (first pass)
+      - name: Build the kernel (first pass, without the archives that need a built kernel)
         run: |
           set +e
+          # build-xnu-4k-baseline.sh links force_load the verified-root and PMGR archives when their
+          # symbols are on, but those archives are produced after a kernel exists. Turn the two
+          # features off for this pass; the second pass turns them back on.
+          cd UniXNU
+          sed -i 's/^CONFIG_XNU_VERIFIED_ROOT_PROBE=y/# CONFIG_XNU_VERIFIED_ROOT_PROBE is not set/' out/tb128fu/.config || true
+          sed -i 's/^CONFIG_XNU_SHENG_PMGR=y/# CONFIG_XNU_SHENG_PMGR is not set/' out/tb128fu/.config || true
+          grep -nE 'VERIFIED_ROOT_PROBE|SHENG_PMGR' out/tb128fu/.config || true
+          cd ..
           ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu ) > build-kernel.log 2>&1
           rc=$?
           echo "first pass exit=$rc"
@@ -136,10 +144,15 @@ jobs:
           fi
           exit $rc
 
-      - name: Build the kernel again (links the PMGR bridge)
+      - name: Build the kernel again (archives exist now, features back on)
         run: |
+          set -eux
           cd UniXNU
-          ./unixnu build kernel -D ../UniXNU-tb128fu
+          sed -i 's/^# CONFIG_XNU_VERIFIED_ROOT_PROBE is not set/CONFIG_XNU_VERIFIED_ROOT_PROBE=y/' out/tb128fu/.config || true
+          sed -i 's/^# CONFIG_XNU_SHENG_PMGR is not set/CONFIG_XNU_SHENG_PMGR=y/' out/tb128fu/.config || true
+          grep -nE 'VERIFIED_ROOT_PROBE|SHENG_PMGR' out/tb128fu/.config || true
+          ./unixnu build kernel -D ../UniXNU-tb128fu > ../build-kernel-2.log 2>&1
+          tail -n 20 ../build-kernel-2.log
 
       - name: Upload logs
         if: always()
