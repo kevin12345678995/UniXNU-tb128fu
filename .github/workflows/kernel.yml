@@ -9,6 +9,7 @@ on:
 
 env:
   PYTHONUNBUFFERED: "1"
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
   UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
   XNU_OWNER_ROOT_VOLUME_UUID: 04769D26-2CA0-4825-B443-E2E5F88300F2
