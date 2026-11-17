@@ -172,6 +172,25 @@ jobs:
           sed -i 's/^CONFIG_XNU_OWNER_CACHE_STARTUP=y/# CONFIG_XNU_OWNER_CACHE_STARTUP is not set/' out/tb128fu/.config
           sed -i 's/^CONFIG_XNU_OWNER_UNION_SYSTEMOS=y/# CONFIG_XNU_OWNER_UNION_SYSTEMOS is not set/' out/tb128fu/.config
           grep -n 'OWNER' out/tb128fu/.config | head -20
+          # Stage 4 without a candidate-kernel audit: the storage/AES binding archives need
+          # build/storage-abi/interface-audit.json, which upstream documents as requiring a research
+          # kernel and a gdb observation. They are not needed for an entry-only kernel.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('UniXNU-tb128fu/board.toml')
+          text = p.read_text()
+          for line in (
+              '  "build-arm-driver.py VirtioMmioBlock --verified-root",\n',
+              '  "build-virtio-mmio-bindings.py --component VirtioMmioBlock --directory build/virtio-mmio-block-verified",\n',
+              '  "build-arm-driver.py RamBlock",\n',
+              '  "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",\n',
+              '  "build-software-aes-bindings.py",\n',
+          ):
+              text = text.replace(line, '')
+          p.write_text(text)
+          print('dropped the audit-dependent archives')
+          PY
+          grep -c 'build-virtio-mmio-bindings\|build-software-aes-bindings\|RamBlock' UniXNU-tb128fu/board.toml || true
           ./unixnu status -D ../UniXNU-tb128fu
           ./unixnu ipsw fetch -D ../UniXNU-tb128fu
 
