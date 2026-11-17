@@ -17,7 +17,8 @@ env:
   PYTHONUNBUFFERED: "1"
   UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
   UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
-  UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
+  # The platform seed of this tablet (any nonzero 64-bit value; recorded in adt/platform-seed.txt).
+  UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID || '7f3a91c4b6d05e28' }}
   XNU_OWNER_ROOT_VOLUME_UUID: 04769D26-2CA0-4825-B443-E2E5F88300F2
 
 jobs:
