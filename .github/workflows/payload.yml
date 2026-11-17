@@ -175,9 +175,13 @@ jobs:
           # First-pass link: the verified-root and legacy-display archives are only produced after a
           # kernel exists (they read its compile records), so their features cannot be linked yet.
           for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_NATIVE_LEGACY_DISPLAY \
-                     CONFIG_XNU_NATIVE_VIRTIO_BLOCK CONFIG_XNU_NATIVE_RAM_BLOCK; do
+                     CONFIG_XNU_NATIVE_VIRTIO_BLOCK CONFIG_XNU_NATIVE_RAM_BLOCK CONFIG_XNU_NATIVE_ADRENO; do
             sed -i "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
           done
+          # The archives those features link are not built on the first pass; drop the paths too.
+          sed -i 's|^CONFIG_XNU_VERIFIED_ROOT_ARCHIVE=.*|# CONFIG_XNU_VERIFIED_ROOT_ARCHIVE is not set|' out/tb128fu/.config || true
+          sed -i 's|^CONFIG_XNU_NATIVE_ADRENO_ARCHIVE=.*|# CONFIG_XNU_NATIVE_ADRENO_ARCHIVE is not set|' out/tb128fu/.config || true
+          sed -i 's|^CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE=.*|# CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE is not set|' out/tb128fu/.config || true
           grep -nE 'VERIFIED_ROOT|LEGACY_DISPLAY|VIRTIO_BLOCK|RAM_BLOCK' out/tb128fu/.config || true
           # Stage 4 without a candidate-kernel audit: the storage/AES binding archives need
           # build/storage-abi/interface-audit.json, which upstream documents as requiring a research
