@@ -59,10 +59,35 @@ jobs:
           sudo apt-get install -y git build-essential cmake ninja-build mtools device-tree-compiler unifdef \
             libbsd-dev uuid-dev libssl-dev zlib1g-dev libclang-dev clang llvm
 
-      - name: Build the Linux Mach-O toolchain (patched clang + cctools-port)
+      - name: Prepare the toolchain prefix for caching
+        run: sudo mkdir -p /opt/unixnu-linux && sudo chown -R "$USER" /opt/unixnu-linux
+
+      - name: Restore the Linux Mach-O toolchain
+        id: tc
+        uses: actions/cache/restore@v4
+        with:
+          path: /opt/unixnu-linux
+          key: unixnu-toolchain-ubuntu2204-v2
+
+      - name: Build the Linux Mach-O toolchain
+        if: steps.tc.outputs.cache-hit != 'true'
         run: |
           sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
-          sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt
+          sudo chown -R "$USER" /opt/unixnu-linux
+
+      - name: Save the toolchain cache
+        if: steps.tc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /opt/unixnu-linux
+          key: unixnu-toolchain-ubuntu2204-v2
+
+      - name: Install the shims and verify the toolchain
+        run: |
+          set -eux
+          sudo install -m 755 UniXNU/scripts/linux/xcrun UniXNU/scripts/linux/plutil UniXNU/scripts/linux/codesign /usr/bin/
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt || \
+            sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
 
       - name: Fetch sources (initialises the module submodules)
         run: |
@@ -97,11 +122,25 @@ jobs:
           ./unixnu build package  -D ../UniXNU-tb128fu
           ./unixnu build firmware -D ../UniXNU-tb128fu
 
+      - name: Build the UEFI probe app and its FAT payload
+        run: |
+          set -eux
+          clang --target=aarch64-unknown-windows -ffreestanding -fshort-wchar -O2 \
+            -c UniXNU-tb128fu/tools/uefiapp/tb128fu_probe.c -o /tmp/tb128fu_probe.o
+          lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 \
+            /out:/tmp/BOOTAA64.EFI /tmp/tb128fu_probe.o
+          file /tmp/BOOTAA64.EFI || true
+          ls -l /tmp/BOOTAA64.EFI
+          mformat -C -F -T 16384 -v TB128FUESP -i /tmp/payload.img ::
+          mmd -i /tmp/payload.img ::/EFI ::/EFI/BOOT
+          mcopy -i /tmp/payload.img /tmp/BOOTAA64.EFI ::/EFI/BOOT/BOOTAA64.EFI
+          mdir -i /tmp/payload.img ::/EFI/BOOT
+
       - name: Pack the boot image
         run: |
           cd UniXNU
           ./unixnu bootimg -D ../UniXNU-tb128fu \
-            --dtb "$UNIXNU_UEFI/Resources/DTBs/tb128fu.dtb" --ramdisk none
+            --dtb "$UNIXNU_UEFI/Resources/DTBs/tb128fu.dtb" --ramdisk /tmp/payload.img
 
       - name: Show the preflight report
         if: always()
