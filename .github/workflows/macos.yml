@@ -126,6 +126,10 @@ jobs:
               '  "build-verified-root-key.py --pin 70a5ea346d2d779a7ef43eb4ed8b17f54488e160d8c2a6d6420969664e3ae798",\n',
           ):
               text = text.replace(line, '')
+          # The UFS driver references the VerifiedRoot kit (_vr_open/_vr_verify_block), whose builder
+          # needs the storage audit. Stage 4 runs without storage: drop the driver and its boot arg.
+          text = text.replace('  "native-ufs-root=1",\n', '')
+          text = text.replace('  "native-ufs-diagnostics=2",\n', '')
           p.write_text(text)
           # pass 2 rebuilds the staged accelerator (it reads the first pass's kernel). The display archive
           # also needs a UniXNU-qemu reference tree this repo does not carry, so it stays out.
@@ -150,7 +154,7 @@ jobs:
                      CONFIG_XNU_OWNER_BOOT_MANIFEST CONFIG_XNU_OWNER_DATA_MOUNT \
                      CONFIG_XNU_OWNER_UNION_SYSTEMOS CONFIG_XNU_NATIVE_LEGACY_DISPLAY \
                      CONFIG_XNU_NATIVE_VIRTIO_BLOCK CONFIG_XNU_NATIVE_RAM_BLOCK \
-                     CONFIG_XNU_BOOT_PROGRESS; do
+                     CONFIG_XNU_BOOT_PROGRESS CONFIG_XNU_NATIVE_UFS; do
             sed -i '' "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
           done
           # The archive paths of the pruned builders must go as well: the driver refuses to start
@@ -160,7 +164,7 @@ jobs:
           # Hard assertion: fail here, in seconds, instead of at the end of the archive phase.
           for check in '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE=' '^CONFIG_XNU_VERIFIED_ROOT_ARCHIVE=' \
                        '^CONFIG_XNU_NATIVE_RAM_BLOCK=y' '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y' \
-                       '^CONFIG_XNU_BOOT_PROGRESS=y' \
+                       '^CONFIG_XNU_BOOT_PROGRESS=y' '^CONFIG_XNU_NATIVE_UFS=y' \
                        '^CONFIG_XNU_VERIFIED_ROOT_PROBE=y'; do
             if grep -q "$check" out/tb128fu/.config; then
               echo "assertion failed: $check is still set"
