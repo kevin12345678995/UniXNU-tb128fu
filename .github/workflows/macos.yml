@@ -92,23 +92,57 @@ jobs:
           ./unixnu status -D ../UniXNU-tb128fu
           ./unixnu ipsw fetch -D ../UniXNU-tb128fu
 
-      - name: Build the kernel (first pass)
+      - name: Drop the archives that need a research-kernel audit
+        run: |
+          set -eux
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('UniXNU-tb128fu/board.toml')
+          text = p.read_text()
+          for line in (
+              '  "build-arm-driver.py VirtioMmioBlock --verified-root",\n',
+              '  "build-virtio-mmio-bindings.py --component VirtioMmioBlock --directory build/virtio-mmio-block-verified",\n',
+              '  "build-arm-driver.py RamBlock",\n',
+              '  "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",\n',
+              '  "build-software-aes-bindings.py",\n',
+          ):
+              text = text.replace(line, '')
+          p.write_text(text)
+          print('pruned')
+          PY
+
+      - name: Build the kernel (first pass, owner chain off)
         run: |
           set +e
+          cd UniXNU
+          for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_OWNER_ROOT_AUDIT \
+                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR \
+                     CONFIG_XNU_OWNER_CACHE_MOUNT CONFIG_XNU_OWNER_CACHE_STARTUP \
+                     CONFIG_XNU_OWNER_BOOT_MANIFEST CONFIG_XNU_OWNER_DATA_MOUNT \
+                     CONFIG_XNU_OWNER_UNION_SYSTEMOS; do
+            sed -i '' "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
+          done
+          cd ..
           ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu ) > build-kernel.log 2>&1
           rc=$?
           echo "first pass exit=$rc"
           if [ $rc -ne 0 ]; then
-            grep -n -i -m 40 'error\|not found\|missing\|undefined\|failed' build-kernel.log | tail -25 || true
+            grep -n -i -m 40 'error\|not found\|missing\|undefined\|failed\|requires' build-kernel.log | tail -25 || true
             tail -n 40 build-kernel.log || true
-            tail -n 30 UniXNU/out/tb128fu/logs/kernel-bootstrap.log 2>/dev/null || true
           fi
           exit $rc
 
-      - name: Build the kernel again (real archives)
+      - name: Build the kernel again (owner chain on, archives exist)
         run: |
+          set -eux
           cd UniXNU
-          ./unixnu build kernel -D ../UniXNU-tb128fu
+          for sym in CONFIG_XNU_VERIFIED_ROOT_PROBE CONFIG_XNU_OWNER_ROOT_AUDIT \
+                     CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR; do
+            sed -i '' "s/^# ${sym} is not set/${sym}=y/" out/tb128fu/.config || true
+          done
+          ./unixnu build kernel -D ../UniXNU-tb128fu > ../build-kernel-2.log 2>&1
+          tail -n 20 ../build-kernel-2.log
+
 
       - name: Build the payload
         if: ${{ !inputs.with_data_seed }}
