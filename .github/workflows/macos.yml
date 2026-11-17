@@ -1,0 +1,155 @@
+name: macos-payload-tb128fu
+
+# The macOS-only half of the pipeline, on a GitHub-hosted macOS runner (no Mac needed):
+# Xcode supplies the iphoneos SDK and clang, hdiutil supplies the image tools that
+# --skip-setup and seed-data-grow need. Modelled on UniXNU-sheng's macos-lab.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      with_data_seed:
+        description: Build and grow the 8 GiB Data seed (needs the disk headroom)
+        type: boolean
+        default: false
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  PYTHONUNBUFFERED: "1"
+  UNIXNU_UEFI: ${{ github.workspace }}/uefi-tb128fu
+  UNIXNU_IPSW: ${{ github.workspace }}/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw
+  UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
+  XNU_OWNER_ROOT_VOLUME_UUID: 04769D26-2CA0-4825-B443-E2E5F88300F2
+
+jobs:
+  payload:
+    name: kernel + payload + boot.img (macOS)
+    runs-on: macos-14
+    timeout-minutes: 350
+    steps:
+      - name: Check out this fork
+        uses: actions/checkout@v4
+        with:
+          path: UniXNU-tb128fu
+          submodules: false
+
+      - name: Check out the board's UniXNU driver
+        uses: actions/checkout@v4
+        with:
+          repository: xVanTuring/UniXNU
+          ref: 85d8ace4b50efb1bfabfb2500b448075553fd0be
+          path: UniXNU
+
+      - name: Check out the firmware
+        uses: actions/checkout@v4
+        with:
+          repository: xVanTuring/uefi-tb128fu
+          ref: tb128fu
+          path: uefi-tb128fu
+          submodules: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the host tools
+        run: |
+          set -eux
+          brew install llvm lld cmake ninja mtools dtc unifdef
+          sw_vers
+          xcodebuild -version
+          df -h /
+
+      - name: Fetch sources
+        run: |
+          cd UniXNU
+          ./unixnu fetch -D ../UniXNU-tb128fu
+
+      - name: Apply the 4 GB / 64 GB files
+        run: |
+          set -eux
+          MM=uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+          cp UniXNU-tb128fu/MemoryMapLib.c "$MM"
+          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+          grep -n 'DRAM 0x85800000' "$MM"
+          grep -n '0xd5fffa' UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+
+      - name: Download the iPad7,1 17.7.11 restore image
+        run: |
+          set -eux
+          mkdir -p "$(dirname "$UNIXNU_IPSW")"
+          curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
+            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+          ls -lh "$UNIXNU_IPSW"
+
+      - name: Select the configuration
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu defconfig tb128fu_defconfig -D ../UniXNU-tb128fu
+          ./unixnu status -D ../UniXNU-tb128fu
+          ./unixnu ipsw fetch -D ../UniXNU-tb128fu
+
+      - name: Build the kernel (first pass)
+        run: |
+          set +e
+          ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu ) > build-kernel.log 2>&1
+          rc=$?
+          echo "first pass exit=$rc"
+          if [ $rc -ne 0 ]; then
+            grep -n -i -m 40 'error\|not found\|missing\|undefined\|failed' build-kernel.log | tail -25 || true
+            tail -n 40 build-kernel.log || true
+            tail -n 30 UniXNU/out/tb128fu/logs/kernel-bootstrap.log 2>/dev/null || true
+          fi
+          exit $rc
+
+      - name: Build the kernel again (real archives)
+        run: |
+          cd UniXNU
+          ./unixnu build kernel -D ../UniXNU-tb128fu
+
+      - name: Build the payload
+        if: ${{ !inputs.with_data_seed }}
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu build payload -D ../UniXNU-tb128fu --unique-chip-id "$UNIXNU_UNIQUE_CHIP_ID"
+
+      - name: Build the payload with a grown Data seed
+        if: ${{ inputs.with_data_seed }}
+        run: |
+          set -eux
+          cd UniXNU
+          python3 ../UniXNU-tb128fu/scripts/prepare-owner-data-fixture.py --output ../build/owner-data-fixture
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, '../UniXNU-tb128fu/drivers/DarwinBoot/Test')
+          import packed_ramdisk
+          packed_ramdisk.pack('../build/owner-data-fixture/owner-data-32.cdr', '../build/owner-data-fixture/owner-data-32.dbr')
+          PY
+          python3 ../UniXNU-tb128fu/scripts/seed-data-grow.py --gib 8 \
+            ../build/owner-data-fixture/owner-data-32.dbr ../build/owner-data-fixture/owner-data-8g.dbr
+          ./unixnu build payload -D ../UniXNU-tb128fu --unique-chip-id "$UNIXNU_UNIQUE_CHIP_ID" \
+            --data-ramdisk ../build/owner-data-fixture/owner-data-8g.dbr --skip-setup
+
+      - name: Pack the boot image
+        run: |
+          set -eux
+          cd UniXNU
+          ./unixnu bootimg -D ../UniXNU-tb128fu --dtb "$UNIXNU_UEFI/Resources/DTBs/tb128fu.dtb"
+          ls -l out/tb128fu/boot/
+          df -h /
+
+      - name: Upload the images and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tb128fu-macos-stage4
+          path: |
+            build-kernel.log
+            UniXNU/out/tb128fu/boot/
+            UniXNU/out/tb128fu/logs/
+            UniXNU/out/tb128fu/kernel/
+          if-no-files-found: warn
+          retention-days: 14
