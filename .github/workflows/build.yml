@@ -179,8 +179,12 @@ jobs:
       - name: Build the UEFI probe app and its FAT payload
         run: |
           set -eux
-          clang --target=aarch64-unknown-windows -ffreestanding -fshort-wchar -O2 \
-            -c UniXNU-tb128fu/tools/uefiapp/tb128fu_probe.c -o /tmp/tb128fu_probe.o
+          # Build against the tree's own EDK2 headers: the struct layouts come from MdePkg, not
+          # from hand-written declarations (the v1 probe guessed them and could fault).
+          clang --target=aarch64-unknown-windows -ffreestanding -fshort-wchar -O1 \
+            -I uefi-tb128fu/Mu_Basecore/MdePkg/Include \
+            -I uefi-tb128fu/Mu_Basecore/MdePkg/Include/AArch64 \
+            -c UniXNU-tb128fu/tools/uefiapp/tb128fu_probe2.c -o /tmp/tb128fu_probe.o
           lld-link /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 \
             /out:/tmp/BOOTAA64.EFI /tmp/tb128fu_probe.o
           file /tmp/BOOTAA64.EFI || true
