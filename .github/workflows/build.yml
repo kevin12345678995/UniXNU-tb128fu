@@ -116,6 +116,32 @@ jobs:
           ./unixnu defconfig tb128fu_defconfig -D ../UniXNU-tb128fu
           ./unixnu status -D ../UniXNU-tb128fu
 
+      - name: Make the firmware boot UniXNU without any key press
+        run: |
+          set -eux
+          python3 - <<'PY'
+          from pathlib import Path
+          # 1) Volume Up currently aborts the boot order and opens the Mu Boot Manager, which needs
+          #    arrow keys this board cannot deliver. Drop the flag so BDS boots BootOrder[0] directly.
+          kc = Path('uefi-tb128fu/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/KeyCallback.c')
+          s = kc.read_text()
+          if 'mEnterBootManager = TRUE;' in s:
+              s = s.replace('  // Toggle Boot Manager Flag\n  mEnterBootManager = TRUE;',
+                            '  // TB128FU: no usable key input; never divert the boot order.\n  (VOID)mEnterBootManager;', 1)
+              kc.write_text(s)
+          print('key callback patched:', 'mEnterBootManager = TRUE;' not in kc.read_text())
+          # 2) No countdown at platform level either.
+          dsc = Path('uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/tb128fu.dsc')
+          d = dsc.read_text()
+          if 'PcdPlatformBootTimeOut' not in d:
+              d = d.replace('[PcdsFixedAtBuild]',
+                            '[PcdsFixedAtBuild]\n  gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|0', 1)
+              dsc.write_text(d)
+          print('boot timeout pcd:', 'PcdPlatformBootTimeOut|0' in dsc.read_text())
+          PY
+          grep -n 'TB128FU: no usable key input' uefi-tb128fu/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/KeyCallback.c || true
+          grep -n 'PcdPlatformBootTimeOut' uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/tb128fu.dsc || true
+
       - name: Build package and firmware (runs scripts/check-tb128fu.py)
         run: |
           cd UniXNU
