@@ -127,7 +127,17 @@ jobs:
           ):
               text = text.replace(line, '')
           p.write_text(text)
-          print('pruned')
+          # pass 2 rebuilds the staged accelerator (it reads the first pass's kernel). The display archive
+          # also needs a UniXNU-qemu reference tree this repo does not carry, so it stays out.
+          pass2 = text.replace('  "build-gop-legacy-display.py",\n', '')
+          Path('UniXNU-tb128fu/board.toml.pass2').write_text(pass2)
+          for line in (
+              '  "build-adreno740-accelerator.py --component Adreno610",\n',
+              '  "build-gop-legacy-display.py",\n',
+          ):
+              text = text.replace(line, '')
+          p.write_text(text)
+          print('pruned; pass1 keeps', text.count('build-'), 'entries')
           PY
 
       - name: Build the kernel (first pass, owner chain off)
@@ -138,7 +148,7 @@ jobs:
                      CONFIG_XNU_OWNER_ROOT_TRUST CONFIG_XNU_SHENG_PMGR \
                      CONFIG_XNU_OWNER_CACHE_MOUNT CONFIG_XNU_OWNER_CACHE_STARTUP \
                      CONFIG_XNU_OWNER_BOOT_MANIFEST CONFIG_XNU_OWNER_DATA_MOUNT \
-                     CONFIG_XNU_OWNER_UNION_SYSTEMOS; do
+                     CONFIG_XNU_OWNER_UNION_SYSTEMOS CONFIG_XNU_NATIVE_LEGACY_DISPLAY; do
             sed -i '' "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
           done
           cd ..
@@ -155,6 +165,7 @@ jobs:
         run: |
           set -eux
           cd UniXNU
+          cp ../UniXNU-tb128fu/board.toml.pass2 ../UniXNU-tb128fu/board.toml
           for sym in CONFIG_XNU_SHENG_PMGR; do
             sed -i '' "s/^# ${sym} is not set/${sym}=y/" out/tb128fu/.config || true
           done
