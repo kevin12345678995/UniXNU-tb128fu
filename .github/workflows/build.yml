@@ -138,6 +138,34 @@ jobs:
                             '[PcdsFixedAtBuild]\n  gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|0', 1)
               dsc.write_text(d)
           print('boot timeout pcd:', 'PcdPlatformBootTimeOut|0' in dsc.read_text())
+          # 3) BDS must not be able to fall through to any menu: boot the first load option here.
+          bm = Path('uefi-tb128fu/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c')
+          b = bm.read_text()
+          marker = '  // Execute Secondary After Console\n  DeviceBootManagerAfterConsole ();'
+          boot_block = (
+              '  // TB128FU: no usable console input. Boot the first option and never reach a menu.\n'
+              '  {\n'
+              '    EFI_BOOT_MANAGER_LOAD_OPTION  Option;\n'
+              '    UINTN                         OptionCount = 0;\n'
+              '    if (!EFI_ERROR (EfiBootManagerGetLoadOptions (&Option, &OptionCount)) && OptionCount > 0) {\n'
+              '      EfiBootManagerBoot (&Option);\n'
+              '      EfiBootManagerFreeLoadOption (&Option);\n'
+              '    }\n'
+              '  }\n'
+          )
+          if marker in b and 'never reach a menu' not in b:
+              b = b.replace(marker, boot_block + marker, 1)
+              bm.write_text(b)
+          print('bds direct boot:', 'never reach a menu' in bm.read_text())
+          # 4) The UniXNU menu itself: always count down, whatever input devices exist.
+          mc = Path('UniXNU/package/UniXNUPkg/Library/UniXNULib/Menu.c')
+          m = mc.read_text()
+          old = '    RemainingMs = HasInput ? -1 : (INTN)Config->FallbackTimeout * 1000;'
+          new = '    RemainingMs = (INTN)((Config->Timeout > 0) ? Config->Timeout : 1) * 1000;  // TB128FU: no key input'
+          if old in m:
+              m = m.replace(old, new)
+              mc.write_text(m)
+          print('menu auto-boot patch:', 'TB128FU: no key input' in mc.read_text())
           PY
           grep -n 'TB128FU: no usable key input' uefi-tb128fu/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/KeyCallback.c || true
           grep -n 'PcdPlatformBootTimeOut' uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/tb128fu.dsc || true
