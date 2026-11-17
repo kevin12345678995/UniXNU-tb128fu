@@ -1,10 +1,7 @@
 name: kernel-tb128fu-4g64g
 
-# Stage 4 preparation: build the XNU kernel for this tablet on a Linux runner.
-# The kernel step works on Linux with the toolchain of scripts/linux/setup-toolchain.py;
-# only --skip-setup and seed-data-grow need macOS, and neither is used here.
-#
-# Inputs: the fork's board.toml / tb128fu.dtb / MemoryMapLib.c / GccUfs.h (4 GB / 64 GB port).
+# Stage 4: build the XNU kernel for this tablet (4 GB / 64 GB TB128FU) on a Linux runner.
+# The toolchain is cached under /opt/unixnu-linux, so a retry costs minutes, not an hour.
 
 on:
   workflow_dispatch:
@@ -51,10 +48,28 @@ jobs:
           sudo apt-get install -y git build-essential cmake ninja-build mtools device-tree-compiler unifdef \
             libbsd-dev uuid-dev libssl-dev zlib1g-dev libclang-dev clang llvm
 
-      - name: Build the Linux Mach-O toolchain (patched clang + cctools-port)
+      - name: Prepare the toolchain prefix for caching
+        run: sudo mkdir -p /opt/unixnu-linux && sudo chown -R "$USER" /opt/unixnu-linux
+
+      - name: Restore the Linux Mach-O toolchain
+        id: tc
+        uses: actions/cache@v4
+        with:
+          path: /opt/unixnu-linux
+          key: unixnu-toolchain-ubuntu2204-v1
+
+      - name: Build the Linux Mach-O toolchain
+        if: steps.tc.outputs.cache-hit != 'true'
+        run: sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
+
+      - name: Install the shims and verify the toolchain
         run: |
-          sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
-          sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt
+          set -eux
+          sudo install -m 755 UniXNU/scripts/linux/xcrun UniXNU/scripts/linux/plutil UniXNU/scripts/linux/codesign /usr/bin/
+          sudo install -m 755 UniXNU/scripts/linux/clang UniXNU/scripts/linux/clang++ UniXNU/scripts/linux/cc \
+            UniXNU/scripts/linux/install UniXNU/scripts/linux/gm4 /opt/unixnu-linux/CommandLineTools/usr/bin/ 2>/dev/null || true
+          sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt || \
+            sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
 
       - name: Fetch sources (initialises the module submodules)
         run: |
@@ -75,10 +90,11 @@ jobs:
         run: |
           set -eux
           mkdir -p "$(dirname "$UNIXNU_IPSW")"
-          curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
-            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+          if [ ! -s "$UNIXNU_IPSW" ]; then
+            curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
+              "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+          fi
           ls -l "$UNIXNU_IPSW"
-          sha256sum "$UNIXNU_IPSW" || true
 
       - name: Select the kernel configuration and fetch the IPSW components
         run: |
@@ -89,26 +105,44 @@ jobs:
 
       - name: Build the kernel (first link has no PMGR reference)
         run: |
-          cd UniXNU
-          ./unixnu build kernel -D ../UniXNU-tb128fu
+          set +e
+          ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu )
+          rc=$?
+          echo "build kernel exit=$rc"
+          if [ $rc -ne 0 ]; then
+            echo '========== build logs =========='
+            for f in $(find UniXNU/out/tb128fu/logs -name '*.log' 2>/dev/null); do
+              echo "===== $f"; tail -n 150 "$f";
+            done
+            echo '========== xnu make output =========='
+            tail -n 200 UniXNU/out/tb128fu/tree/.cache/xnu-work/*.log 2>/dev/null || true
+          fi
+          exit $rc
 
       - name: Build the kernel again (links the PMGR bridge)
+        if: success()
         run: |
           cd UniXNU
           ./unixnu build kernel -D ../UniXNU-tb128fu
 
-      - name: Show what was produced
+      - name: Upload the build logs
         if: always()
-        run: |
-          find UniXNU/out/tb128fu -maxdepth 3 -type f -printf '%s\t%p\n' 2>/dev/null | sort -n | tail -40
+        uses: actions/upload-artifact@v4
+        with:
+          name: tb128fu-4g64g-kernel-logs
+          path: |
+            UniXNU/out/tb128fu/logs/
+            UniXNU/out/tb128fu/tree/build/**/xnu*.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload the kernel
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tb128fu-4g64g-kernel
           path: |
             UniXNU/out/tb128fu/kernel/
             UniXNU/out/tb128fu/tree/build/**/*.macho
-            UniXNU/out/tb128fu/logs/
           if-no-files-found: warn
           retention-days: 14
