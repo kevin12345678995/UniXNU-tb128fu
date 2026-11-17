@@ -11,6 +11,11 @@
 static EFI_GUID gGopGuid = { 0x9042a9de, 0x23dc, 0x4a38,
                               { 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a } };
 
+// {26BACCB1-6F42-11D4-BCE7-0080C73C8881}: defined here because a freestanding image has no
+// library to pull gEfiCpuArchProtocolGuid from.
+static EFI_GUID gCpuArchGuid = { 0x26baccb1, 0x6f42, 0x11d4,
+                                 { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } };
+
 // Forces a DIR64 relocation so the image carries .reloc.
 static UINT32 gTouch[4] = { 1, 2, 3, 4 };
 static UINT32 *volatile gTouchAnchor = gTouch;
@@ -81,7 +86,7 @@ EFI_STATUS EFIAPI efi_main (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTabl
   Map1 = EFI_NOT_FOUND;
   Map2 = EFI_NOT_FOUND;
   Map3 = EFI_NOT_FOUND;
-  if (!EFI_ERROR (BS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&Cpu)) && (Cpu != NULL)) {
+  if (!EFI_ERROR (BS->LocateProtocol (&gCpuArchGuid, NULL, (VOID **)&Cpu)) && (Cpu != NULL)) {
     Map1 = Cpu->SetMemoryAttributes (Cpu, (EFI_PHYSICAL_ADDRESS)W1, 0x10000, EFI_MEMORY_UC);
     Map2 = Cpu->SetMemoryAttributes (Cpu, (EFI_PHYSICAL_ADDRESS)W2, 0x10000, EFI_MEMORY_UC);
     Map3 = Cpu->SetMemoryAttributes (Cpu, (EFI_PHYSICAL_ADDRESS)W3, 0x10000, EFI_MEMORY_UC);
