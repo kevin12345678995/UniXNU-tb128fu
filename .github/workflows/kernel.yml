@@ -71,6 +71,16 @@ jobs:
           sudo ./UniXNU/scripts/linux/setup-toolchain.py --check --package-manager apt || \
             sudo ./UniXNU/scripts/linux/setup-toolchain.py --package-manager apt -j "$(nproc)"
 
+      - name: Install unifdef 2.12 (Ubuntu's 2.10 rejects a multi-line comment in a #endif directive)
+        run: |
+          set -eux
+          sudo apt-get remove -y unifdef || true
+          git clone --depth 1 --branch unifdef-2.12 https://github.com/fanf2/unifdef /tmp/unifdef-src
+          make -C /tmp/unifdef-src
+          sudo install -m 755 /tmp/unifdef-src/unifdef /usr/local/bin/unifdef
+          command -v unifdef
+          unifdef -V || true
+
       - name: Fetch sources (initialises the module submodules)
         run: |
           cd UniXNU
