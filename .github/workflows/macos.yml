@@ -149,7 +149,8 @@ jobs:
                      CONFIG_XNU_OWNER_CACHE_MOUNT CONFIG_XNU_OWNER_CACHE_STARTUP \
                      CONFIG_XNU_OWNER_BOOT_MANIFEST CONFIG_XNU_OWNER_DATA_MOUNT \
                      CONFIG_XNU_OWNER_UNION_SYSTEMOS CONFIG_XNU_NATIVE_LEGACY_DISPLAY \
-                     CONFIG_XNU_NATIVE_VIRTIO_BLOCK CONFIG_XNU_NATIVE_RAM_BLOCK; do
+                     CONFIG_XNU_NATIVE_VIRTIO_BLOCK CONFIG_XNU_NATIVE_RAM_BLOCK \
+                     CONFIG_XNU_BOOT_PROGRESS; do
             sed -i '' "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
           done
           # The archive paths of the pruned builders must go as well: the driver refuses to start
@@ -159,6 +160,7 @@ jobs:
           # Hard assertion: fail here, in seconds, instead of at the end of the archive phase.
           for check in '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE=' '^CONFIG_XNU_VERIFIED_ROOT_ARCHIVE=' \
                        '^CONFIG_XNU_NATIVE_RAM_BLOCK=y' '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y' \
+                       '^CONFIG_XNU_BOOT_PROGRESS=y' \
                        '^CONFIG_XNU_VERIFIED_ROOT_PROBE=y'; do
             if grep -q "$check" out/tb128fu/.config; then
               echo "assertion failed: $check is still set"
