@@ -152,6 +152,20 @@ jobs:
                      CONFIG_XNU_NATIVE_VIRTIO_BLOCK CONFIG_XNU_NATIVE_RAM_BLOCK; do
             sed -i '' "s/^${sym}=y/# ${sym} is not set/" out/tb128fu/.config || true
           done
+          # The archive paths of the pruned builders must go as well: the driver refuses to start
+          # when a *_ARCHIVE path points at a file that this pass does not build.
+          sed -i '' 's|^CONFIG_XNU_VERIFIED_ROOT_ARCHIVE=.*|# CONFIG_XNU_VERIFIED_ROOT_ARCHIVE is not set|' out/tb128fu/.config || true
+          sed -i '' 's|^CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE=.*|# CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE is not set|' out/tb128fu/.config || true
+          # Hard assertion: fail here, in seconds, instead of at the end of the archive phase.
+          for check in '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK_ARCHIVE=' '^CONFIG_XNU_VERIFIED_ROOT_ARCHIVE=' \
+                       '^CONFIG_XNU_NATIVE_RAM_BLOCK=y' '^CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y' \
+                       '^CONFIG_XNU_VERIFIED_ROOT_PROBE=y'; do
+            if grep -q "$check" out/tb128fu/.config; then
+              echo "assertion failed: $check is still set"
+              exit 2
+            fi
+          done
+          grep -nE 'ARCHIVE|VIRTIO_BLOCK|RAM_BLOCK' out/tb128fu/.config || true
           cd ..
           ( cd UniXNU && ./unixnu build kernel -D ../UniXNU-tb128fu ) > build-kernel.log 2>&1
           rc=$?
