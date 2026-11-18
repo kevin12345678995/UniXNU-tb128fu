@@ -107,29 +107,6 @@ jobs:
               p.write_text(s)
           print('tolerant flags:', '-Wno-unknown-warning-option' in p.read_text())
           PY
-      - name: Fetch sources
-        run: |
-          cd UniXNU
-          ./unixnu fetch -D ../UniXNU-tb128fu
-
-      - name: Apply the 4 GB / 64 GB files
-        run: |
-          set -eux
-          MM=uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
-          cp UniXNU-tb128fu/MemoryMapLib.c "$MM"
-          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
-          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
-          grep -n 'DRAM 0x85800000' "$MM"
-          grep -n '0xd5fffa' UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
-
-      - name: Download the iPad7,1 17.7.11 restore image
-        run: |
-          set -eux
-          mkdir -p "$(dirname "$UNIXNU_IPSW")"
-          curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
-            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
-          ls -l "$UNIXNU_IPSW"
-
       - name: Drop the archives that need a research-kernel audit
         run: |
           set -eux
@@ -158,7 +135,34 @@ jobs:
           p.write_text(text)
           print('pruned')
           PY
-          grep -c 'build-virtio-mmio-bindings' UniXNU-tb128fu/board.toml || true
+          # show what is left, so a silent no-op prune is impossible to miss
+          echo '---- remaining archive entries ----'
+          grep -n '"build-' UniXNU-tb128fu/board.toml || true
+          echo '---- forbidden entries (must be empty) ----'
+          grep -nE 'SoftwareAES|adreno610|adreno740|gop-legacy|VirtioMmioBlock --verified-root|RamBlock|software-aes-bindings|verified-root-key' UniXNU-tb128fu/board.toml || true
+      - name: Fetch sources
+        run: |
+          cd UniXNU
+          ./unixnu fetch -D ../UniXNU-tb128fu
+
+      - name: Apply the 4 GB / 64 GB files
+        run: |
+          set -eux
+          MM=uefi-tb128fu/Platforms/Lenovo/tb128fuPkg/Library/MemoryMapLib/MemoryMapLib.c
+          cp UniXNU-tb128fu/MemoryMapLib.c "$MM"
+          cp UniXNU-tb128fu/GccUfs.h UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+          cp UniXNU-tb128fu/tb128fu.dtb uefi-tb128fu/Resources/DTBs/tb128fu.dtb
+          grep -n 'DRAM 0x85800000' "$MM"
+          grep -n '0xd5fffa' UniXNU-tb128fu/drivers/Tb128fuUfs/GccUfs.h
+
+      - name: Download the iPad7,1 17.7.11 restore image
+        run: |
+          set -eux
+          mkdir -p "$(dirname "$UNIXNU_IPSW")"
+          curl -L --retry 3 --retry-delay 5 -o "$UNIXNU_IPSW" \
+            "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+          ls -l "$UNIXNU_IPSW"
+
       - name: Select the configuration and fetch the IPSW components
         run: |
           cd UniXNU
